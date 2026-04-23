@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   structureOptions,
-  disciplineOptions,
+  consistencyOptions,
   nonNegotiablePresets,
   distanceGoals,
   activityLevelOptions,
@@ -10,7 +10,7 @@ import {
   coachingOptions,
 } from './mockData.js'
 import { fetchActivities } from './strava.js'
-import { detectFTP, confidenceLabel } from './ftp.js'
+import { detectFTP, confidenceLabel, detectPowerBreakdown, ftpFromDurationPower } from './ftp.js'
 import { getWithingsSession, fetchLatestWeight, redirectToWithings, getManualWeight, setManualWeight } from './withings.js'
 
 // ── Inference helpers ────────────────────────────────────────────────────────
@@ -206,7 +206,9 @@ export default function Onboarding({ onComplete, session }) {
 
   // Goal
   const [goalType, setGoalType] = useState(null)
-  const [ftpTarget, setFtpTarget] = useState('')
+  const [ftpTarget, setFtpTarget] = useState('')   // always stored in watts
+  const [ftpWattsInput, setFtpWattsInput] = useState('')
+  const [ftpWkgInput, setFtpWkgInput] = useState('')
   const [targetDate, setTargetDate] = useState('')
   const [distanceTarget, setDistanceTarget] = useState(null)
 
@@ -231,8 +233,14 @@ export default function Onboarding({ onComplete, session }) {
   const [inferredStructure, setInferredStructure] = useState(null)
   const [structureConfirmed, setStructureConfirmed] = useState(null)
 
-  // Discipline
+  // Consistency (formerly discipline)
   const [discipline, setDiscipline] = useState(null)
+
+
+  // Power breakdown (for FTP goal step)
+  const [breakdown, setBreakdown] = useState(null)
+  const [editingBreakdownLabel, setEditingBreakdownLabel] = useState(null)
+  const [breakdownEditValue, setBreakdownEditValue] = useState('')
 
   // Coaching (new in v3 — step 8)
   const [coaching, setCoaching] = useState(null)
@@ -256,7 +264,10 @@ export default function Onboarding({ onComplete, session }) {
         setActivities(data)
 
         const ftp = detectFTP(data)
-        if (ftp) setDetectedFtp(ftp)
+        if (ftp) {
+          setDetectedFtp(ftp)
+          setBreakdown(detectPowerBreakdown(data, ftp.ftp))
+        }
 
         const conf = computeInferenceConfidence(data)
         setInferenceConfidence(conf)
@@ -451,6 +462,34 @@ export default function Onboarding({ onComplete, session }) {
           </div>
         </div>
 
+        {/* Power breakdown */}
+        {breakdown && (
+          <div style={{ marginTop: 8 }}>
+            {['sprint', 'attack', 'climb'].map(cat => (
+              <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
+                <div className="breakdown-title" style={{ textTransform: 'capitalize' }}>{cat}</div>
+                {breakdown[cat].map(row => {
+                  const wkg = row.watts && weight ? Math.round((row.watts / weight) * 100) / 100 : null
+                  return (
+                    <div key={row.label} className="breakdown-row" style={{ cursor: 'default' }}>
+                      <span className="breakdown-label">{row.label}</span>
+                      <div className="breakdown-values">
+                        {row.watts
+                          ? <>
+                              <span className="breakdown-watts">{row.watts}<span style={{ fontSize: 11, color: 'var(--text-secondary)', marginLeft: 2 }}>W</span></span>
+                              {wkg && <span className="breakdown-wkg">{wkg} <span style={{ fontSize: 11 }}>W/kg</span></span>}
+                            </>
+                          : <span style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>—</span>
+                        }
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="spacer" />
         <button className="btn-primary" onClick={next} disabled={!weight}>
           {weight ? 'Continue' : 'Add weight to continue'}
@@ -505,9 +544,49 @@ export default function Onboarding({ onComplete, session }) {
     if (goalType === 'ftp') {
       const targetW = parseFloat(ftpTarget) || 0
       const showImpact = weight && targetW > 0
+      const currentWkg = ftp && weight ? Math.round((ftp / weight) * 100) / 100 : null
       const targetWkg = showImpact ? Math.round((targetW / weight) * 100) / 100 : null
-      const lighterW = weight ? weight - 3 : null
-      const targetWkgLighter = showImpact && lighterW ? Math.round((targetW / lighterW) * 100) / 100 : null
+      const targetWkgLighter = showImpact ? Math.round((targetW / (weight - 3)) * 100) / 100 : null
+      const targetWkgHeavier = showImpact ? Math.round((targetW / (weight + 1)) * 100) / 100 : null
+      const targetBreakdown = targetW > 50 ? detectPowerBreakdown(activities, targetW) : null
+
+      function handleWattsChange(val) {
+        setFtpWattsInput(val)
+        const w = parseFloat(val)
+        if (w > 0) {
+          setFtpTarget(String(Math.round(w)))
+          if (weight) setFtpWkgInput(String(Math.round(w / weight * 100) / 100))
+        } else {
+          setFtpTarget('')
+          setFtpWkgInput('')
+        }
+      }
+
+      function handleWkgChange(val) {
+        setFtpWkgInput(val)
+        const wkgVal = parseFloat(val)
+        if (wkgVal > 0 && weight) {
+          const watts = Math.round(wkgVal * weight)
+          setFtpWattsInput(String(watts))
+          setFtpTarget(String(watts))
+        } else {
+          setFtpWattsInput('')
+          setFtpTarget('')
+        }
+      }
+
+      function handleBreakdownEdit(label, val) {
+        const newWatts = parseInt(val, 10)
+        if (newWatts > 0) {
+          const newFtp = ftpFromDurationPower(label, newWatts)
+          if (newFtp) {
+            setFtpTarget(String(newFtp))
+            setFtpWattsInput(String(newFtp))
+            if (weight) setFtpWkgInput(String(Math.round(newFtp / weight * 100) / 100))
+          }
+        }
+        setEditingBreakdownLabel(null)
+      }
 
       return (
         <div className="onboarding">
@@ -515,35 +594,55 @@ export default function Onboarding({ onComplete, session }) {
             <ProgressBar step={step} />
             <h1 className="onboarding-heading">Set your FTP target.</h1>
             {ftp
-              ? <p className="onboarding-sub">Your current FTP is <strong>{ftp}W</strong>. Where do you want to take it?</p>
+              ? <p className="onboarding-sub">Your current FTP is <strong>{ftp}W</strong>{currentWkg ? ` · ${currentWkg} W/kg` : ''}. Where do you want to take it?</p>
               : <p className="onboarding-sub">We'll detect your FTP from your rides. Set a target for where you want to get to.</p>
             }
 
             <div className="field-label">Target FTP</div>
-            <div className="input-row">
-              <input
-                className="input-field"
-                type="number"
-                inputMode="numeric"
-                value={ftpTarget}
-                onChange={e => setFtpTarget(e.target.value)}
-                placeholder={ftp ? String(Math.round(ftp * 1.1)) : '280'}
-              />
-              <div className="input-suffix">W</div>
+            <div className="ftp-dual-input">
+              <div className="ftp-dual-field">
+                <input
+                  className="input-field"
+                  type="number"
+                  inputMode="numeric"
+                  value={ftpWattsInput}
+                  onChange={e => handleWattsChange(e.target.value)}
+                  placeholder={ftp ? String(Math.round(ftp * 1.1)) : '280'}
+                />
+                <span className="ftp-dual-unit">W</span>
+              </div>
+              {weight && (
+                <>
+                  <span className="ftp-dual-sep">=</span>
+                  <div className="ftp-dual-field">
+                    <input
+                      className="input-field"
+                      type="number"
+                      inputMode="decimal"
+                      value={ftpWkgInput}
+                      onChange={e => handleWkgChange(e.target.value)}
+                      placeholder={currentWkg ? String(Math.round(currentWkg * 1.1 * 100) / 100) : '4.0'}
+                    />
+                    <span className="ftp-dual-unit">W/kg</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {showImpact && (
               <div className="weight-impact-panel">
                 <div className="weight-impact-row">
-                  <span>At your current weight of {weight}kg</span>
+                  <span>At your current weight ({weight}kg)</span>
                   <span className="weight-impact-val">{targetWkg} W/kg</span>
                 </div>
-                {targetWkgLighter && (
-                  <div className="weight-impact-row" style={{ opacity: 0.7 }}>
-                    <span>At {lighterW}kg (same power)</span>
-                    <span className="weight-impact-val">{targetWkgLighter} W/kg</span>
-                  </div>
-                )}
+                <div className="weight-impact-row" style={{ opacity: 0.75 }}>
+                  <span>At {weight - 3}kg — 3kg lighter, same power</span>
+                  <span className="weight-impact-val">{targetWkgLighter} W/kg</span>
+                </div>
+                <div className="weight-impact-row" style={{ opacity: 0.6 }}>
+                  <span>At {weight + 1}kg — 1kg heavier, same power</span>
+                  <span className="weight-impact-val">{targetWkgHeavier} W/kg</span>
+                </div>
               </div>
             )}
 
@@ -551,6 +650,57 @@ export default function Onboarding({ onComplete, session }) {
             <div className="input-row">
               <input className="input-field" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
             </div>
+
+            {(breakdown || targetBreakdown) && (
+              <>
+                <div className="field-label" style={{ marginTop: 8 }}>Power breakdown</div>
+                {targetBreakdown && <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>Tap a target number to adjust it — it updates your FTP.</p>}
+                {['sprint', 'attack', 'climb'].map(cat => (
+                  <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
+                    <div className="breakdown-row" style={{ cursor: 'default', paddingBottom: 4 }}>
+                      <span className="breakdown-title" style={{ padding: 0 }}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
+                      <div className="breakdown-values">
+                        {breakdown && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', minWidth: 56, textAlign: 'right' }}>Now</span>}
+                        {targetBreakdown && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary)', minWidth: 56, textAlign: 'right' }}>Target</span>}
+                      </div>
+                    </div>
+                    {(breakdown || targetBreakdown)[cat].map(row => {
+                      const currentRow = breakdown?.[cat].find(r => r.label === row.label)
+                      const targetRow = targetBreakdown?.[cat].find(r => r.label === row.label)
+                      const isEditing = editingBreakdownLabel === row.label
+                      return (
+                        <div key={row.label} className="breakdown-row" onClick={() => !isEditing && targetRow && setEditingBreakdownLabel(row.label)}>
+                          <span className="breakdown-label">{row.label}</span>
+                          {isEditing ? (
+                            <div className="breakdown-edit" onClick={e => e.stopPropagation()}>
+                              <input type="number" inputMode="numeric" value={breakdownEditValue}
+                                onChange={e => setBreakdownEditValue(e.target.value)} autoFocus
+                                style={{ width: 72, background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '4px 8px', fontSize: 15, fontFamily: 'var(--font)', outline: 'none', textAlign: 'right' }} />
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 4 }}>W</span>
+                              <button onClick={() => handleBreakdownEdit(row.label, breakdownEditValue)}
+                                style={{ marginLeft: 8, fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 600 }}>Done</button>
+                            </div>
+                          ) : (
+                            <div className="breakdown-values">
+                              {breakdown && (
+                                <span style={{ fontSize: 14, color: 'var(--text-secondary)', minWidth: 56, textAlign: 'right' }}>
+                                  {currentRow?.watts ? `${currentRow.watts}W` : '—'}
+                                </span>
+                              )}
+                              {targetBreakdown && (
+                                <span style={{ fontSize: 14, fontWeight: 600, color: targetRow?.watts ? 'var(--primary)' : 'var(--text-tertiary)', minWidth: 56, textAlign: 'right' }}>
+                                  {targetRow?.watts ? `${targetRow.watts}W` : '—'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </>
+            )}
 
             <div className="spacer" />
             <button className="btn-primary" onClick={next} disabled={!ftpTarget || !targetDate}>Continue</button>
@@ -741,7 +891,10 @@ export default function Onboarding({ onComplete, session }) {
       <div className="onboarding-step">
         <ProgressBar step={step} />
         <h1 className="onboarding-heading">What does your week look like?</h1>
-        <p className="onboarding-sub">Two people with the same schedule can have completely different relationships to training.</p>
+        {inferredDays
+          ? <p className="onboarding-sub">Your Strava data shows you train around <strong>{inferredDays} day{inferredDays > 1 ? 's' : ''} a week</strong>. But what does training actually compete with?</p>
+          : <p className="onboarding-sub">Two people with the same schedule can have completely different relationships to training.</p>
+        }
         <Picker options={lifeContextOptions} value={lifeContext} onChange={setLifeContext} />
         <div className="spacer" />
         <button className="btn-primary" onClick={next} disabled={!lifeContext}>Continue</button>
@@ -790,14 +943,14 @@ export default function Onboarding({ onComplete, session }) {
     )
   }
 
-  // ── Step 7: Discipline goal ──
+  // ── Step 7: Consistency goal ──
   if (step === 7) return (
     <div className="onboarding">
       <div className="onboarding-step">
         <ProgressBar step={step} />
-        <h1 className="onboarding-heading">Do you have a discipline goal?</h1>
-        <p className="onboarding-sub">Separate from your performance goal. This is about how you want to train, not just what you want to achieve.</p>
-        <Picker options={disciplineOptions} value={discipline} onChange={setDiscipline} />
+        <h1 className="onboarding-heading">How consistent do you want to be?</h1>
+        <p className="onboarding-sub">Separate from your performance goal. This shapes how the app talks to you over time.</p>
+        <Picker options={consistencyOptions} value={discipline} onChange={setDiscipline} />
         <div className="spacer" />
         <button className="btn-primary" onClick={next} disabled={!discipline}>Continue</button>
         <button className="btn-secondary" onClick={back}>Back</button>

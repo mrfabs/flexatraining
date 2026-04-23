@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { getRpeZone } from './mockData.js'
 import { fetchActivities, formatDuration, activityMeta, estimateTSS } from './strava.js'
-import { detectFTP, confidenceLabel, ftpExplanation } from './ftp.js'
+import { detectFTP } from './ftp.js'
 import { saveMetricSnapshot } from './auth.js'
-import { getWithingsSession, fetchLatestWeight, redirectToWithings, getManualWeight, setManualWeight } from './withings.js'
+import { getWithingsSession, fetchLatestWeight, getManualWeight } from './withings.js'
 import { getPlanForDate } from './plan.js'
 import { workoutUrl } from './vo2maxWorkouts.js'
 import { generateFeedback, getCachedFeedback, cacheFeedback } from './claudeFeedback.js'
@@ -96,47 +96,6 @@ function formatGoalDate(dateStr) {
   })
 }
 
-// ── Context sentence ─────────────────────────────────────────────────────────
-// Rule-based one-liner at the top of the feed. Only shown for today.
-
-function buildContextSentence({ byDate, goal, ftp, plannedSession, todayStr }) {
-  const parts = []
-
-  // Yesterday's load
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yActs = byDate[toDateStr(yesterday)] || []
-  const yTss = yActs.reduce((s, a) => s + (estimateTSS(a, ftp) || 0), 0)
-
-  if (yActs.length > 0) {
-    if (yTss >= 100)      parts.push('Big day yesterday — legs may need attention.')
-    else if (yTss >= 60)  parts.push('Solid session yesterday.')
-    else                  parts.push('Easy day yesterday — you should feel fresh.')
-  } else {
-    parts.push('Rest day yesterday.')
-  }
-
-  // Today's plan or goal nudge
-  if (plannedSession) {
-    parts.push(`${plannedSession.label} on the plan today.`)
-  } else if (goal?.type === 'ftp' && goal.ftpTarget && ftp) {
-    const gap = goal.ftpTarget - ftp
-    if (gap <= 0)       parts.push("You've hit your FTP target.")
-    else if (gap <= 10) parts.push(`${gap}W from your goal — almost there.`)
-    else                parts.push(`${gap}W to go on your FTP goal.`)
-  }
-
-  // Week sessions so far
-  const weekDays = getWeekDays(0)
-  const doneThisWeek = weekDays.filter(d => byDate[toDateStr(d)]?.length).length
-  const remainingDays = weekDays.filter(d => toDateStr(d) > todayStr).length
-  if (doneThisWeek > 0 && remainingDays > 0) {
-    parts.push(`${doneThisWeek} session${doneThisWeek > 1 ? 's' : ''} done this week, ${remainingDays} day${remainingDays > 1 ? 's' : ''} to go.`)
-  }
-
-  return parts.slice(0, 2).join(' ')
-}
-
 // ── RPE helpers ──────────────────────────────────────────────────────────────
 
 function getRpeRatings() {
@@ -147,52 +106,6 @@ function saveRpeRating(activityId, rpe) {
   const ratings = getRpeRatings()
   ratings[String(activityId)] = rpe
   localStorage.setItem('rpe_ratings', JSON.stringify(ratings))
-}
-
-// ── Power unit helpers ───────────────────────────────────────────────────────
-
-function getPowerUnit() { return localStorage.getItem('power_unit') || 'W' }
-function setPowerUnit(unit) { localStorage.setItem('power_unit', unit) }
-
-// ── FTP Tooltip panel ────────────────────────────────────────────────────────
-
-function FtpTooltip({ ftpResult, onClose }) {
-  const exp = ftpExplanation(ftpResult)
-  if (!exp) return null
-  return (
-    <>
-      <div className="tooltip-backdrop" onClick={onClose} />
-      <div className="tooltip-sheet">
-        <div className="debug-handle" />
-        <div className="tooltip-title">How your FTP was calculated</div>
-        <div className="tooltip-rows">
-          <div className="tooltip-row">
-            <span className="tooltip-key">Activity</span>
-            <span className="tooltip-val">{exp.activityName}</span>
-          </div>
-          {exp.activityDate && (
-            <div className="tooltip-row">
-              <span className="tooltip-key">Date</span>
-              <span className="tooltip-val">{exp.activityDate}</span>
-            </div>
-          )}
-          <div className="tooltip-row">
-            <span className="tooltip-key">Method</span>
-            <span className="tooltip-val">{exp.method}</span>
-          </div>
-          <div className="tooltip-row">
-            <span className="tooltip-key">Confidence</span>
-            <span className="tooltip-val">{exp.confidenceLabel}</span>
-          </div>
-          <div className="tooltip-row">
-            <span className="tooltip-key">Formula</span>
-            <span className="tooltip-val tooltip-formula">{exp.formula}</span>
-          </div>
-        </div>
-        <button className="debug-close" onClick={onClose}>Got it</button>
-      </div>
-    </>
-  )
 }
 
 // ── RPE row ──────────────────────────────────────────────────────────────────
@@ -302,54 +215,30 @@ export default function Dashboard({ session, onMetricsUpdate }) {
   const [error, setError] = useState(null)
   const [ftpResult, setFtpResult] = useState(null)
   const [weight, setWeight] = useState(null)
-  const [weightSource, setWeightSource] = useState(null)
   const [weightLoading, setWeightLoading] = useState(false)
-  const [editingWeight, setEditingWeight] = useState(false)
-  const [weightInput, setWeightInput] = useState('')
   const [weekOffset, setWeekOffset] = useState(0)
   const [selectedDay, setSelectedDay] = useState(todayStr)
-
-  const [showFtpTooltip, setShowFtpTooltip] = useState(false)
-  const [powerUnit, setPowerUnitState] = useState(getPowerUnit())
   const [rpeRatings, setRpeRatings] = useState(getRpeRatings())
   const [expandedRpe, setExpandedRpe] = useState(null)
-
   const [feedback, setFeedback] = useState(null)
   const [feedbackLoading, setFeedbackLoading] = useState(false)
   const [feedbackError, setFeedbackError] = useState(null)
 
   const weekDays = getWeekDays(weekOffset)
   const byDate = groupByDate(activities)
-
   const ftp = ftpResult?.ftp ?? null
   const wkg = ftp && weight ? Math.round((ftp / weight) * 100) / 100 : null
-  const displayFtp = ftp ? (powerUnit === 'wkg' && weight ? Math.round((ftp / weight) * 100) / 100 : ftp) : null
-  const displayUnit = powerUnit === 'wkg' ? 'W/kg' : 'W'
 
-  function displayPower(watts) {
-    if (!watts) return null
-    return powerUnit === 'wkg' && weight ? Math.round((watts / weight) * 100) / 100 : Math.round(watts)
-  }
-
-  function togglePowerUnit() {
-    const next = powerUnit === 'W' ? 'wkg' : 'W'
-    setPowerUnit(next)
-    setPowerUnitState(next)
-  }
-
-  // Load weight
+  // Load weight (for wkg and Claude context — no UI here, editing lives in Stats)
   useEffect(() => {
     const manual = getManualWeight()
-    if (manual) { setWeight(manual); setWeightSource('manual'); onMetricsUpdate?.({ weight: manual }) }
-
+    if (manual) { setWeight(manual); onMetricsUpdate?.({ weight: manual }) }
     const ws = getWithingsSession()
     if (!ws?.access_token) return
     setWeightLoading(true)
     fetchLatestWeight(ws.access_token)
-      .then(w => {
-        if (w !== null) { setWeight(w); setWeightSource('withings'); onMetricsUpdate?.({ weight: w }) }
-      })
-      .catch(e => console.error('Withings weight fetch failed:', e))
+      .then(w => { if (w !== null) { setWeight(w); onMetricsUpdate?.({ weight: w }) } })
+      .catch(() => {})
       .finally(() => setWeightLoading(false))
   }, [])
 
@@ -436,11 +325,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
   const streak = calcStreak(byDate)
   const weekNum = getISOWeek(weekDays[0])
 
-  // Context sentence (only for today)
-  const contextSentence = selectedDay === todayStr
-    ? buildContextSentence({ byDate, goal, ftp, plannedSession, todayStr })
-    : null
-
   function handleWeekBack() {
     const next = weekOffset - 1
     setWeekOffset(next)
@@ -470,10 +354,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
 
   return (
     <div className="shell">
-      {showFtpTooltip && ftpResult && (
-        <FtpTooltip ftpResult={ftpResult} onClose={() => setShowFtpTooltip(false)} />
-      )}
-
       <div className="status-bar">
         <span>Training</span>
         <span>{new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
@@ -485,9 +365,28 @@ export default function Dashboard({ session, onMetricsUpdate }) {
 
       <div className="scroll-area">
 
-        {/* ── 1. Context sentence ── */}
-        {contextSentence && (
-          <div className="context-sentence">{contextSentence}</div>
+        {/* ── 1. Claude analysis ── */}
+        {(feedback || feedbackLoading || feedbackError) && (
+          <div className="section">
+            {feedbackLoading && (
+              <div className="feedback-card">
+                <div className="feedback-meta" style={{ color: 'var(--text-tertiary)' }}>Claude · generating…</div>
+                <p className="feedback-text" style={{ color: 'var(--text-secondary)' }}>Reading your last two weeks…</p>
+              </div>
+            )}
+            {feedbackError && !feedbackLoading && (
+              <div className="feedback-card">
+                <div className="feedback-meta" style={{ color: 'var(--red)' }}>Claude · error</div>
+                <p className="feedback-text" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{feedbackError}</p>
+              </div>
+            )}
+            {feedback && !feedbackLoading && (
+              <div className="feedback-card">
+                <div className="feedback-meta">Claude · Today</div>
+                <p className="feedback-text">{feedback}</p>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── 2. Week card ── */}
@@ -603,7 +502,12 @@ export default function Dashboard({ session, onMetricsUpdate }) {
           {!loading && !error && dayActivities.length === 0 && !plannedSession && (
             <div className="rest-day-card">
               <span className="rest-day-ring" />
-              <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Rest day</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 14, fontWeight: 500 }}>Rest day</span>
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.4 }}>
+                  Muscles repair and adapt during recovery. Rest is not optional — it is where the training takes effect.
+                </span>
+              </div>
             </div>
           )}
 
@@ -622,8 +526,8 @@ export default function Dashboard({ session, onMetricsUpdate }) {
                   const savedRpe = rpeRatings[String(a.id)]
                   const rpeZone = savedRpe ? getRpeZone(savedRpe) : null
                   const isExpanded = expandedRpe === a.id
-                  const np = displayPower(a.weighted_average_watts)
-                  const npUnit = powerUnit === 'wkg' && weight ? 'W/kg NP' : 'W NP'
+                  const np = a.weighted_average_watts ? Math.round(a.weighted_average_watts) : null
+                  const npUnit = 'W NP'
                   return (
                     <div key={a.id}>
                       <div
@@ -647,6 +551,7 @@ export default function Dashboard({ session, onMetricsUpdate }) {
                             {formatDuration(a.moving_time)}
                             {np ? ` · ${np} ${npUnit}` : ''}
                             {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm` : ''}
+                            {a.calories ? ` · ${Math.round(a.calories)} cal` : ''}
                           </div>
                         </div>
                         <div className="activity-tss">
@@ -668,121 +573,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
           )}
         </div>
 
-        {/* ── 5. Your numbers (secondary reference) ── */}
-        <div className="section">
-          <div className="section-label-row">
-            <span className="section-label" style={{ marginBottom: 0 }}>Your numbers</span>
-            {weight && (
-              <button className="power-toggle" onClick={togglePowerUnit}>
-                {powerUnit === 'W' ? 'W' : 'W/kg'}
-              </button>
-            )}
-          </div>
-          <div className="metrics-grid" style={{ marginTop: 12 }}>
-
-            <div className="metric-card">
-              <div className="metric-label-row">
-                <span className="metric-label">FTP</span>
-                {ftpResult && <button className="info-btn" onClick={() => setShowFtpTooltip(true)}>ⓘ</button>}
-              </div>
-              <div className="metric-value" style={{ fontSize: displayFtp ? undefined : 22, color: displayFtp ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                {displayFtp ? <>{displayFtp}<span className="metric-unit">{displayUnit}</span></> : '—'}
-              </div>
-              <div className="metric-footer">
-                <span style={{ fontSize: 11 }}>
-                  {ftpResult ? confidenceLabel(ftpResult.confidence) : 'No qualifying ride yet'}
-                </span>
-              </div>
-            </div>
-
-            <div className="metric-card">
-              <div className="metric-label">W/kg</div>
-              <div className="metric-value">{wkg !== null ? wkg : '—'}</div>
-              <div className="metric-footer">
-                <span style={{ fontSize: 11 }}>{weight ? `at ${weight}kg` : 'needs weight'}</span>
-              </div>
-            </div>
-
-            <div className="metric-card wide">
-              <div className="metric-label">Weight</div>
-              {weight !== null && !editingWeight ? (
-                <>
-                  <div className="metric-value">{weight}<span className="metric-unit">kg</span></div>
-                  <div className="metric-footer" style={{ justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11 }}>{weightSource === 'withings' ? 'Withings' : 'Manual'}</span>
-                    <button onClick={() => { setWeightInput(String(weight)); setEditingWeight(true) }}
-                      style={{ fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Update
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="metric-value" style={{ fontSize: weightLoading ? 16 : 34, color: 'var(--text-secondary)' }}>
-                    {weightLoading ? 'Loading…' : '—'}
-                  </div>
-                  {!weightLoading && (
-                    <>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                        <button onClick={redirectToWithings} className="weight-source-btn">Withings</button>
-                        <button disabled className="weight-source-btn" style={{ opacity: 0.35 }}>InBody</button>
-                      </div>
-                      {editingWeight ? (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <input type="number" inputMode="decimal" value={weightInput}
-                            onChange={e => setWeightInput(e.target.value)} placeholder="74.5" autoFocus
-                            style={{ flex: 1, background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 15, fontFamily: 'var(--font)', outline: 'none' }} />
-                          <button onClick={() => {
-                            const v = parseFloat(weightInput)
-                            if (v > 0) { setManualWeight(v); setWeight(v); setWeightSource('manual'); onMetricsUpdate?.({ weight: v }) }
-                            setEditingWeight(false)
-                          }} style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
-                            Save
-                          </button>
-                          <button onClick={() => setEditingWeight(false)}
-                            style={{ background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font)' }}>
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setEditingWeight(true)}
-                          style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>
-                          enter manually
-                        </button>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-          </div>
-        </div>
-
-        {/* ── Latest read ── */}
-        {(feedback || feedbackLoading || feedbackError) && (
-          <div className="section">
-            <div className="section-label">Latest read</div>
-            {feedbackLoading && (
-              <div className="feedback-card">
-                <div className="feedback-meta" style={{ color: 'var(--text-tertiary)' }}>Claude · generating…</div>
-                <p className="feedback-text" style={{ color: 'var(--text-secondary)' }}>Reading your last two weeks…</p>
-              </div>
-            )}
-            {feedbackError && !feedbackLoading && (
-              <div className="feedback-card">
-                <div className="feedback-meta" style={{ color: 'var(--red)' }}>Claude · error</div>
-                <p className="feedback-text" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{feedbackError}</p>
-              </div>
-            )}
-            {feedback && !feedbackLoading && (
-              <div className="feedback-card">
-                <div className="feedback-meta">Claude · Today</div>
-                <p className="feedback-text">{feedback}</p>
-              </div>
-            )}
-          </div>
-        )}
 
       </div>
     </div>

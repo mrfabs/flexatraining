@@ -116,8 +116,8 @@ export const structureOptions = [
   { label: 'I train when I can and figure it out as I go', value: 'wings_it' },
 ]
 
-export const disciplineOptions = [
-  { label: 'I want to build more structure', value: 'more_structure' },
+export const consistencyOptions = [
+  { label: 'I want to be more consistent', value: 'more_structure' },
   { label: "I'm happy with how I train now", value: 'content' },
   { label: 'I want to train more freely', value: 'more_freedom' },
 ]

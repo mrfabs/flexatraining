@@ -1,11 +1,61 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import StravaAuth from './StravaAuth.jsx'
 import Onboarding from './Onboarding.jsx'
 import Dashboard from './Dashboard.jsx'
+import Stats from './Stats.jsx'
 import Profile from './Profile.jsx'
 import { exchangeCode, storeSession, getSession, clearSession, syncUser, saveProfile, saveNonNegotiables, saveGoal } from './auth.js'
 import { exchangeWithingsCode, storeWithingsSession, WITHINGS_STATE, clearWithingsSession, getWithingsSession } from './withings.js'
 import { generateWeekPlan, savePlan } from './plan.js'
+
+// ── Passcode gate ────────────────────────────────────────────────────────────
+
+const PASSCODE = 'flexa'
+const GATE_KEY = 'prototype_access'
+
+function Gate({ onUnlock }) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState(false)
+  const inputRef = useRef(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    if (value === PASSCODE) {
+      localStorage.setItem(GATE_KEY, '1')
+      onUnlock()
+    } else {
+      setError(true)
+      setValue('')
+      setTimeout(() => setError(false), 1200)
+    }
+  }
+
+  return (
+    <div className="onboarding">
+      <div className="done-screen">
+        <p style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 24 }}>
+          This is a private prototype.
+        </p>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 280 }}>
+          <input
+            ref={inputRef}
+            type="password"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder="Passcode"
+            className={`input-field${error ? ' input-field--error' : ''}`}
+            style={{ textAlign: 'center', letterSpacing: 4 }}
+            autoComplete="off"
+          />
+          <button type="submit" className="btn-primary">Enter</button>
+        </form>
+        {error && <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 8 }}>Wrong passcode.</p>}
+      </div>
+    </div>
+  )
+}
 
 // ── Debug panel (dev only) ───────────────────────────────────────────────────
 
@@ -103,6 +153,16 @@ function HomeIcon({ active }) {
   )
 }
 
+function StatsIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6"  y1="20" x2="6"  y2="14" />
+    </svg>
+  )
+}
+
 function PersonIcon({ active }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -113,8 +173,10 @@ function PersonIcon({ active }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('loading') // loading | auth | onboarding | app
-  const [tab, setTab] = useState('dashboard')      // dashboard | profile
+  const [screen, setScreen] = useState(() =>
+    localStorage.getItem(GATE_KEY) ? 'loading' : 'gate'
+  ) // gate | loading | auth | onboarding | app
+  const [tab, setTab] = useState('dashboard')      // dashboard | stats | profile
   const [session, setSession] = useState(null)
   const [authError, setAuthError] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -129,6 +191,8 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (screen === 'gate') return
+
     async function init() {
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
@@ -193,7 +257,7 @@ export default function App() {
     }
 
     init()
-  }, [])
+  }, [screen])
 
   async function handleOnboardingComplete(profile) {
     if (session) {
@@ -231,6 +295,7 @@ export default function App() {
     setScreen('auth')
   }
 
+  if (screen === 'gate') return <Gate onUnlock={() => setScreen('loading')} />
   if (screen === 'loading') return <Loading />
   if (screen === 'auth') return (
     <>
@@ -261,6 +326,13 @@ export default function App() {
           />
         </div>
 
+        <div style={{ display: tab === 'stats' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+          <Stats
+            session={session}
+            onMetricsUpdate={handleMetricsUpdate}
+          />
+        </div>
+
         <div style={{ display: tab === 'profile' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
           <Profile
             session={session}
@@ -276,6 +348,10 @@ export default function App() {
         <button className={`tab-item${tab === 'dashboard' ? ' active' : ''}`} onClick={() => setTab('dashboard')}>
           <HomeIcon active={tab === 'dashboard'} />
           <span>Home</span>
+        </button>
+        <button className={`tab-item${tab === 'stats' ? ' active' : ''}`} onClick={() => setTab('stats')}>
+          <StatsIcon active={tab === 'stats'} />
+          <span>Stats</span>
         </button>
         <button className={`tab-item${tab === 'profile' ? ' active' : ''}`} onClick={() => setTab('profile')}>
           <PersonIcon active={tab === 'profile'} />

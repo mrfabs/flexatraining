@@ -412,6 +412,10 @@ html, body {
   box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
 }
 
+.input-field--error {
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.35);
+}
+
 .input-suffix {
   background: var(--card);
   border-radius: 12px;
@@ -1371,4 +1375,100 @@ button.source-badge {
 
 .profile-card .profile-edit-block {
   padding: 14px 16px;
+}
+
+
+/* ── Power breakdown ── */
+.breakdown-section {
+  background: var(--card);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.breakdown-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 10px 14px 6px;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--separator);
+  cursor: pointer;
+  gap: 8px;
+}
+
+.breakdown-row:active {
+  background: var(--bg);
+}
+
+.breakdown-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-width: 44px;
+}
+
+.breakdown-values {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.breakdown-watts {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.breakdown-wkg {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.breakdown-edit {
+  display: flex;
+  align-items: center;
+}
+
+/* ── FTP dual input (W ↔ W/kg) ── */
+.ftp-dual-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ftp-dual-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.ftp-dual-field .input-field {
+  flex: 1;
+  border-radius: 12px 0 0 12px;
+}
+
+.ftp-dual-unit {
+  background: var(--card);
+  border-radius: 0 12px 12px 0;
+  padding: 14px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ftp-dual-sep {
+  font-size: 18px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
 }

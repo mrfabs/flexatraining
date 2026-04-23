@@ -38,6 +38,8 @@ export function cacheFeedback(athleteId, text) {
 }
 
 export async function generateFeedback({ ftp, weight, wkg, goal, recentActivities, weekSummary, profile }) {
+  return 'Claude will populate this.'
+
   const lines = []
 
   lines.push('## Athlete metrics')

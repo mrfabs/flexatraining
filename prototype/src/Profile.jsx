@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { getWithingsSession, redirectToWithings, getManualWeight } from './withings.js'
-import { mockFeedback, activityLevelOptions, lifeContextOptions, coachingOptions, structureOptions, disciplineOptions } from './mockData.js'
+import { mockFeedback, activityLevelOptions, lifeContextOptions, coachingOptions, structureOptions, consistencyOptions } from './mockData.js'
 
 // ── Profile storage helpers ──────────────────────────────────────────────────
 
@@ -314,9 +314,9 @@ export default function Profile({ session, onSignOut, ftp, weight }) {
               <div className="profile-divider" />
 
               <EditableField
-                label="Discipline goal"
+                label="Consistency goal"
                 value={profile.discipline}
-                options={disciplineOptions}
+                options={consistencyOptions}
                 onSave={v => updateField('discipline', v)}
               />
               <div className="profile-divider" />

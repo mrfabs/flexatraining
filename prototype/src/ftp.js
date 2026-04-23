@@ -73,6 +73,87 @@ export function confidenceLabel(confidence) {
   }[confidence] ?? 'Estimated'
 }
 
+// ── Power curve breakdown ─────────────────────────────────────────────────────
+// Estimates best power for each duration from activity summaries.
+// Sprint durations (5s–1min) anchor on max_watts; longer durations use
+// real NP from matching rides, falling back to FTP-based estimates.
+
+const RIDE_TYPES_SET = new Set(['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRide', 'EBikeRide'])
+
+function bestNpForDuration(rides, targetSec, tol = 0.25) {
+  const min = targetSec * (1 - tol)
+  const max = targetSec * (1 + tol)
+  const matching = rides.filter(a =>
+    a.moving_time >= min && a.moving_time <= max &&
+    (a.weighted_average_watts || a.average_watts)
+  )
+  if (!matching.length) return null
+  return Math.max(...matching.map(a => a.weighted_average_watts || a.average_watts))
+}
+
+export function detectPowerBreakdown(activities, ftp) {
+  const rides = activities.filter(a =>
+    RIDE_TYPES_SET.has(a.sport_type || a.type) &&
+    (a.max_watts > 0 || a.average_watts > 0)
+  )
+  if (!rides.length) return null
+
+  const bestMax = Math.max(...rides.map(a => a.max_watts || 0))
+  const hasSprint = bestMax > 100
+
+  const s5  = hasSprint ? bestMax : null
+  const s15 = hasSprint ? Math.round(bestMax * 0.82) : null
+  const s30 = hasSprint ? Math.round(bestMax * 0.70) : null
+  const s1m = hasSprint ? Math.round(bestMax * 0.58) : null
+
+  const a2m  = bestNpForDuration(rides, 120)  ?? (ftp ? Math.round(ftp * 1.25) : null)
+  const a3m  = bestNpForDuration(rides, 180)  ?? (ftp ? Math.round(ftp * 1.18) : null)
+  const a5m  = bestNpForDuration(rides, 300)  ?? (ftp ? Math.round(ftp * 1.06) : null)
+  const a10m = bestNpForDuration(rides, 600)  ?? (ftp ? Math.round(ftp * 1.01) : null)
+
+  const c15m = bestNpForDuration(rides, 900)  ?? (ftp ? Math.round(ftp * 0.98) : null)
+  const c20m = bestNpForDuration(rides, 1200) ?? (ftp ? Math.round(ftp / 0.95) : null)
+  const c30m = bestNpForDuration(rides, 1800) ?? (ftp ? Math.round(ftp * 0.97) : null)
+  const c45m = bestNpForDuration(rides, 2700) ?? (ftp ? Math.round(ftp * 0.96) : null)
+  const c60m = bestNpForDuration(rides, 3600) ?? ftp ?? null
+
+  return {
+    sprint: [
+      { label: '5s',   watts: s5  },
+      { label: '15s',  watts: s15 },
+      { label: '30s',  watts: s30 },
+      { label: '1min', watts: s1m },
+    ],
+    attack: [
+      { label: '2min',  watts: a2m  },
+      { label: '3min',  watts: a3m  },
+      { label: '5min',  watts: a5m  },
+      { label: '10min', watts: a10m },
+    ],
+    climb: [
+      { label: '15min', watts: c15m },
+      { label: '20min', watts: c20m },
+      { label: '30min', watts: c30m },
+      { label: '45min', watts: c45m },
+      { label: '60min', watts: c60m },
+    ],
+  }
+}
+
+// Inverse: given a power value for a specific breakdown entry, estimate FTP.
+// Uses the same ratios as detectPowerBreakdown so they stay in sync.
+const DURATION_TO_FTP_RATIO = {
+  '5s': null, '15s': null, '30s': null, '1min': null, // sprint — not FTP-derived
+  '2min': 1.25, '3min': 1.18, '5min': 1.06, '10min': 1.01,
+  '15min': 0.98, '20min': 1 / 0.95, '30min': 0.97, '45min': 0.96, '60min': 1.0,
+}
+
+export function ftpFromDurationPower(label, watts) {
+  const ratio = DURATION_TO_FTP_RATIO[label]
+  if (!ratio || !watts) return null
+  return Math.round(watts / ratio)
+}
+
 export function ftpExplanation(ftpResult) {
   if (!ftpResult) return null
   const a = ftpResult.sourceActivity

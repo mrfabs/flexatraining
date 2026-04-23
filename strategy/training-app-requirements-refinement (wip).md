@@ -1,3 +1,15 @@
+# Who This App Is For
+
+The target athlete is not the one who logs every session and follows a 16-week plan to the letter. That person already has tools. This app is for the athlete who genuinely loves their sport — cycling, in this case — but whose relationship with consistency is fragile. Not because they lack discipline or desire, but because monotony erodes their motivation faster than fatigue does. Doing the same thing, on the same days, in the same way eventually makes them feel trapped rather than trained.
+
+This person is also capable. They can run, swim, hike, lift, do a yoga session on a Tuesday when the idea of getting on a bike feels suffocating. That cross-sport activity is not a failure of focus — it is how they stay sane, and ultimately how they stay in the sport at all. An app that treats a trail run as a deviation from the cycling plan will lose them. An app that treats it as part of a wider picture of an athlete who is still moving, still engaged, and still pointing toward their goal will keep them.
+
+The design implication is significant. The coaching layer must read variety as a signal worth understanding, not correcting. The goal-tracking logic must be robust enough to stay meaningful even when weeks are irregular. And the way the app talks to this athlete must never make them feel like they have failed when they deviated — it must make them feel like someone is paying attention to the full picture and still believes in the direction of travel.
+
+The single biggest risk with this audience is making them feel judged. The second biggest risk is making the app feel like one more thing that requires maintenance. Both kill retention faster than any missing feature.
+
+---
+
 # Context
 Onboarding is essencial for the training app to gather enough context about the user. It must feel seemless and almost invisible. We must follow the principle "the best design is no design" and populate data and information based on the data that is available (strava, withings, inbody...). Everything must feel automatic so that user doesnt feel that she has to add a ton of details all the time to be able to reap the rewards of using this app.
 
