@@ -120,3 +120,10 @@ When setting goals, every strong goal needs four numbers:
 4. A timeframe — the bound within which change is expected
 
 Do not accept vague targets. Push for the four numbers before treating any goal as real.
+
+---
+
+## Session Management
+
+- At the start of every conversation, read `open-threads.md` and surface any active threads to the user before doing anything else. Keep it brief: one line per thread, what it is and where it was left.
+- When the user types `/leaving`, run the leaving skill: update `open-threads.md` to reflect what was done and what comes next, run `/save`, then close with `/exit`.

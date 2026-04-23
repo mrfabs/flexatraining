@@ -6,5 +6,6 @@ prototype/.env
 .DS_Store
 
 # Claude Code local session config (project commands are kept)
-.claude/
+.claude/settings*
+.claude/settings.local.json
 prototype/.claude/settings*
