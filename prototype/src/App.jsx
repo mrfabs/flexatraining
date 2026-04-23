@@ -266,14 +266,12 @@ export default function App() {
       // Persist full profile to localStorage for Profile screen
       localStorage.setItem(`onboarding_profile_${athleteId}`, JSON.stringify(profile))
 
-      // If coaching themselves, generate and save a 1-week plan
-      if (profile.coaching === 'self') {
-        const weekPlan = generateWeekPlan({
-          goalType: profile.goalType,
-          daysPerWeek: profile.daysPerWeek ?? 4,
-        })
-        savePlan(athleteId, weekPlan)
-      }
+      // Generate and save a 1-week plan from onboarding data
+      const weekPlan = generateWeekPlan({
+        goalType: profile.goalType,
+        daysPerWeek: profile.daysPerWeek ?? 4,
+      })
+      savePlan(athleteId, weekPlan)
 
       // Supabase sync (best-effort — prototype)
       await saveProfile(athleteId, profile)
@@ -337,8 +335,6 @@ export default function App() {
           <Profile
             session={session}
             onSignOut={handleSignOut}
-            ftp={sharedFtp}
-            weight={sharedWeight}
           />
         </div>
 

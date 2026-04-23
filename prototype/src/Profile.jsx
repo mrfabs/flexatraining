@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { getWithingsSession, redirectToWithings, getManualWeight } from './withings.js'
-import { mockFeedback, activityLevelOptions, lifeContextOptions, coachingOptions, structureOptions, consistencyOptions } from './mockData.js'
+import { activityLevelOptions, lifeContextOptions, coachingOptions, structureOptions, consistencyOptions } from './mockData.js'
 
 // ── Profile storage helpers ──────────────────────────────────────────────────
 
@@ -89,27 +89,12 @@ function EditableField({ label, value, options, onSave }) {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function Profile({ session, onSignOut, ftp, weight }) {
+export default function Profile({ session, onSignOut }) {
   const athlete = session?.athlete
   const withingsSession = getWithingsSession()
-  const weightSource = withingsSession ? 'Withings' : getManualWeight() ? 'Manual' : null
-  const wkg = ftp && weight ? Math.round((ftp / weight) * 100) / 100 : null
 
   // Load and allow editing of onboarding profile
   const [profile, setProfileState] = useState(() => loadProfile(athlete?.id))
-
-  // Goal from onboarding profile
-  const goalType = profile?.goalType ?? null
-  const ftpTarget = profile?.ftpTarget ? parseFloat(profile.ftpTarget) : null
-  const distanceTarget = profile?.distanceTarget ? parseFloat(profile.distanceTarget) : null
-  const startFtp = profile?.currentFtp ? parseFloat(profile.currentFtp) : null
-  const targetDate = profile?.targetDate ?? null
-  const goalPct = (goalType === 'ftp' && startFtp && ftpTarget && ftp)
-    ? Math.min(100, Math.max(0, Math.round(((ftp - startFtp) / (ftpTarget - startFtp)) * 100)))
-    : 0
-  const goalDateLabel = targetDate
-    ? new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : null
 
   function updateField(key, value) {
     const updated = { ...(profile || {}), [key]: value }
@@ -196,75 +181,6 @@ export default function Profile({ session, onSignOut, ftp, weight }) {
             </div>
 
           </div>
-        </div>
-
-        {/* ── Numbers ── */}
-        <div className="section">
-          <div className="section-label">Your numbers</div>
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-label">FTP</div>
-              <div className="metric-value" style={{ fontSize: ftp ? 34 : 22, color: ftp ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                {ftp ? <>{ftp}<span className="metric-unit">W</span></> : '—'}
-              </div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">W/kg</div>
-              <div className="metric-value" style={{ fontSize: wkg ? 34 : 22, color: wkg ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                {wkg ?? '—'}
-              </div>
-            </div>
-            <div className="metric-card wide">
-              <div className="metric-label">Weight</div>
-              <div className="metric-value" style={{ fontSize: weight ? 34 : 22, color: weight ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                {weight ? <>{weight}<span className="metric-unit">kg</span></> : '—'}
-              </div>
-              {weightSource && (
-                <div className="metric-footer">
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{weightSource}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Goal ── */}
-        <div className="section">
-          <div className="section-label">Goal</div>
-          {!goalType ? (
-            <div className="goal-card" style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14 }}>
-              No goal set yet.
-            </div>
-          ) : goalType === 'ftp' ? (
-            <div className="goal-card">
-              <div className="goal-header">
-                <div>
-                  <div className="goal-title">FTP {ftpTarget}W</div>
-                  {goalDateLabel && <div className="goal-date">By {goalDateLabel}</div>}
-                </div>
-                <div className="goal-badge">{goalPct}% there</div>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${goalPct}%` }} />
-              </div>
-              <div className="progress-labels">
-                {startFtp
-                  ? <span>Started at <strong>{startFtp}W</strong></span>
-                  : <span style={{ color: 'var(--text-tertiary)' }}>Start FTP not recorded</span>
-                }
-                <span>Target <strong>{ftpTarget}W</strong></span>
-              </div>
-            </div>
-          ) : (
-            <div className="goal-card">
-              <div className="goal-header">
-                <div>
-                  <div className="goal-title">Ride {distanceTarget}km</div>
-                  {goalDateLabel && <div className="goal-date">By {goalDateLabel}</div>}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ── Training profile ── */}
@@ -385,15 +301,6 @@ export default function Profile({ session, onSignOut, ftp, weight }) {
             </div>
           </div>
         )}
-
-        {/* ── Feedback history ── */}
-        <div className="section">
-          <div className="section-label">Feedback history</div>
-          <div className="feedback-card">
-            <div className="feedback-meta">Claude · {mockFeedback.date}</div>
-            <p className="feedback-text">{mockFeedback.message}</p>
-          </div>
-        </div>
 
         {/* ── Sign out ── */}
         <div className="section">

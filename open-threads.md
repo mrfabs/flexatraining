@@ -44,14 +44,44 @@ Active work in this project. Read at the start of every session and surface any 
 - Onboarding Step 2 (FTP goal): currency-style linked W ↔ W/kg inputs (typing either updates the other). Breakdown table shows "Now" vs "Target" columns side by side. Tapping a target value adjusts FTP.
 - Onboarding Step 5: shows inferred training frequency from Strava before the life context question.
 - Discipline renamed to Consistency throughout (onboarding, profile, mockData).
-**What to do next:** Test the full onboarding flow end to end — particularly the breakdown tinkering and W/W/kg conversion. Verify calories appear for power-meter rides.  
+- Profile screen: removed "Your numbers", "Goal", and "Feedback history" sections. Those now live in Stats and Dashboard respectively.
+- Dashboard: added "This week's plan" section showing all 7 days with session labels, intensity dots, duration, and completion markers from Strava data.
+- Plan generation: removed `coaching === 'self'` gate — all users now get a plan generated at onboarding completion.
+**What to do next:** Test the full onboarding flow end to end — particularly the breakdown tinkering and W/W/kg conversion. Verify the week plan section renders correctly after onboarding completes.  
 **Last updated:** 2026-04-23
 
 ---
 
-## Target Audience Strategy
+## Plan Generation — Richer Parameters
+
+**Status:** Design decision pending  
+**What was done:** Identified the full parameter set the plan generator should use. Currently it only takes `goalType` and `daysPerWeek`. The full list agreed on:
+
+1. Current FTP
+2. Current weight
+3. Current power distribution
+4. Target goal
+5. Target date
+6. Week feedback — lifestyle signals and training misses
+7. Consistency feedback — builds a character for when consistency drifts or holds
+8. Coaching context — if self-coached: generate plan; if AI-coached: let user upload their existing plan as a .md file, treat it as highest priority input
+9. Non-negotiables — informs what to include and exclude
+10. Other types of training — treated as part of the training week, not noise
+11. What they're keeping — cross-training that stays in the mix
+
+**Key open question:** Parameters 6, 7, and 8 require Claude to act on meaningfully — a rule-based generator can only use them mechanically. Point 8 (AI coach upload) is also a new UX feature needing its own design. The decision needed is: do we un-stub Claude for plan generation and make this the primary Claude use case rather than daily commentary?  
+**What to do next:** Decide whether to un-stub Claude for plan generation. If yes, design the prompt around all 11 parameters above. Point 8 (AI coach upload flow) needs separate UX design regardless.  
+**Last updated:** 2026-04-23
+
+---
+
+## Strategy — Core Positioning and Product Loop
 
 **Status:** Done  
-**What was done:** Added "Who This App Is For" section to `strategy/training-app-requirements-refinement (wip).md`. Defines the primary user as an athlete who loves their sport but needs variety to stay consistent, and flags the product implications for coaching tone and cross-sport tracking.  
-**What to do next:** No immediate action. Revisit when building the Claude coaching prompt or the cross-sport activity handling.  
+**What was done:** Added four new sections to `strategy/training-app-requirements-refinement (wip).md`:
+- **App Structure — The Four Layers**: data → goal → constraints → plan as the structural spine.
+- **The Core Product Loop**: how people currently use LLMs for training and what the app replaces; includes a table of all inputs and their sources.
+- **Bring Your Own LLM (BYOK)**: BYOK as a power-user option layered on top of a hosted LLM, not a requirement. Pragmatic path: start hosted, design data layer for BYOK later.
+- **Core Positioning**: the app as an interface for the user's LLM — solves the briefing problem, reframes onboarding, makes Claude the product not a feature.
+**What to do next:** No immediate action. Reference when designing the Claude prompt, the plan generation flow, or any future BYOK feature.  
 **Last updated:** 2026-04-23

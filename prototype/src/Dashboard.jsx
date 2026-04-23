@@ -4,7 +4,7 @@ import { fetchActivities, formatDuration, activityMeta, estimateTSS } from './st
 import { detectFTP } from './ftp.js'
 import { saveMetricSnapshot } from './auth.js'
 import { getWithingsSession, fetchLatestWeight, getManualWeight } from './withings.js'
-import { getPlanForDate } from './plan.js'
+import { getPlanForDate, loadPlan } from './plan.js'
 import { workoutUrl } from './vo2maxWorkouts.js'
 import { generateFeedback, getCachedFeedback, cacheFeedback } from './claudeFeedback.js'
 
@@ -200,6 +200,61 @@ function PlannedSessionCard({ session }) {
           </a>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Week plan section ────────────────────────────────────────────────────────
+
+const PLAN_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+const INTENSITY_COLOR = {
+  easy:     'var(--green)',
+  moderate: 'var(--orange)',
+  hard:     'var(--red)',
+}
+
+function WeekPlanSection({ athleteId, weekDays, byDate }) {
+  const plan = athleteId ? loadPlan(athleteId) : null
+  if (!plan || plan.every(s => s === null)) return null
+
+  return (
+    <div className="section">
+      <div className="section-label">This week's plan</div>
+      <div className="profile-card" style={{ gap: 0 }}>
+        {weekDays.map((day, i) => {
+          const session = plan[i]
+          const dayStr = toDateStr(day)
+          const done = !!(byDate[dayStr]?.length)
+
+          return (
+            <div key={dayStr} className="profile-row" style={{ gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', width: 28, flexShrink: 0 }}>
+                {PLAN_DAY_NAMES[i]}
+              </span>
+
+              {session ? (
+                <>
+                  <span
+                    style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: done ? 'var(--text-tertiary)' : INTENSITY_COLOR[session.intensity] ?? 'var(--primary)',
+                    }}
+                  />
+                  <span style={{ flex: 1, fontSize: 14, color: done ? 'var(--text-tertiary)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>
+                    {session.label}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                    {done ? '✓' : `${session.duration}min`}
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: 14, color: 'var(--text-tertiary)', flex: 1 }}>Rest</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -441,7 +496,10 @@ export default function Dashboard({ session, onMetricsUpdate }) {
           </div>
         </div>
 
-        {/* ── 3. Goal progress ── */}
+        {/* ── 3. Week plan ── */}
+        <WeekPlanSection athleteId={athlete?.id} weekDays={weekDays} byDate={byDate} />
+
+        {/* ── 4. Goal progress ── */}
         <div className="section">
           <div className="section-label">Goal</div>
           {!goal ? (
@@ -487,7 +545,7 @@ export default function Dashboard({ session, onMetricsUpdate }) {
           )}
         </div>
 
-        {/* ── 4. Day activity ── */}
+        {/* ── 5. Day activity ── */}
         <div className="section">
           <div className="section-label">{dayLabel}</div>
 
