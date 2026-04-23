@@ -49,6 +49,27 @@ This repository contains both the app code (`prototype/`) and all strategy and p
 - `prototype/vercel.json` — Vercel build config (Vercel root directory: `prototype/`)
 - `strategy/` — product requirements and strategy docs
 
+### Local Development
+
+```bash
+cd prototype && npm run dev
+```
+
+Opens at `http://localhost:5173`. Requires a populated `prototype/.env` — copy from `prototype/.env.example` and fill in values.
+
+There are no automated tests. Verify changes by running the app and exercising the affected flow manually.
+
+### Database
+
+Schema and RLS policies live in the Supabase dashboard (no migration files in this repo yet). Before making any data-layer changes, check the current table structure in Supabase directly. If you add or modify tables, document the schema change here or in a new `prototype/schema.sql` file.
+
+### Strategy Docs
+
+`strategy/` contains versioned product and requirements documents:
+- Files named `*-v1.md`, `*-v2.md` etc. are stable snapshots
+- Files with `(wip)` in the name are active drafts — treat them as current
+- Always read the highest version + any wip file before making product decisions
+
 ### Environment Variables
 All required vars are documented in `prototype/.env.example`. Never commit `prototype/.env`.
 
@@ -63,9 +84,19 @@ All required vars are documented in `prototype/.env.example`. Never commit `prot
 
 - Never log or expose `ANTHROPIC_API_KEY`, client secrets, or tokens in client-side code
 - `VITE_` prefixed vars are bundled into the frontend — treat them as public
-- Strava and Withings client secrets are currently in `VITE_` vars (prototype caveat — move to serverless functions before any public launch)
 - Never use `dangerouslySetInnerHTML` or equivalent
 - Always validate and sanitise at API boundaries
+
+> **Known risk:** `VITE_STRAVA_CLIENT_SECRET` and `VITE_WITHINGS_CLIENT_SECRET` are currently exposed in the frontend bundle. This is acceptable for the prototype but must be moved to serverless functions before any public launch. Do not normalise this pattern — flag it if you see it spreading.
+
+---
+
+## Branching and Git
+
+- `main` is the production branch — always deployable, connected to Vercel
+- Branch naming: `feature/short-description` for new work, `fix/short-description` for bug fixes
+- All changes go through a PR targeting `main` — no direct commits to `main`
+- Commit messages: imperative tense, one line for small changes, a short body for anything non-obvious
 
 ---
 
