@@ -9,3 +9,4 @@ prototype/.env
 .claude/settings*
 .claude/settings.local.json
 prototype/.claude/settings*
+.vercel

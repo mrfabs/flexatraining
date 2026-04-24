@@ -161,6 +161,7 @@ export const coachingOptions = [
     value: 'coach',
     label: 'I have a coach',
     sub: 'The app works alongside your coach — analysis only, no plan generated',
+    comingSoon: true,
   },
   {
     value: 'ai',

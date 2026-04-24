@@ -606,45 +606,29 @@ export default function Dashboard({ session, onMetricsUpdate }) {
     const cached = getCachedFeedback(athlete.id)
     if (cached) { setFeedback(cached); return }
 
-    const fourteenDaysAgo = new Date()
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-
-    const recent = activities
-      .filter(a => new Date(a.start_date_local) >= fourteenDaysAgo)
-      .slice(0, 20)
-      .map(a => ({
-        date: a.start_date_local?.slice(0, 10),
+    function activitiesForDate(dateStr) {
+      return (byDate[dateStr] || []).map(a => ({
         type: activityMeta(a).label,
         duration: formatDuration(a.moving_time),
-        np: a.weighted_average_watts ? Math.round(a.weighted_average_watts) : null,
         tss: estimateTSS(a, ftp),
       }))
-
-    function weekSummaryFor(days) {
-      const byDateLocal = groupByDate(activities)
-      const sessions = days.filter(d => byDateLocal[toDateStr(d)]?.length).length
-      const tss = days.reduce((sum, d) => {
-        const acts = byDateLocal[toDateStr(d)] || []
-        return sum + acts.reduce((s, a) => s + (estimateTSS(a, ftp) || 0), 0)
-      }, 0)
-      return { sessions, tss: Math.round(tss) }
     }
 
-    const weekSummary = {
-      thisWeek: weekSummaryFor(getWeekDays(0)),
-      lastWeek: weekSummaryFor(getWeekDays(-1)),
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+    const yesterdayStr = toDateStr(yesterday)
+    const tomorrowStr = toDateStr(tomorrow)
+
+    const threeDay = {
+      yesterday: { activities: activitiesForDate(yesterdayStr), plan: getPlanSessionForDate(yesterdayStr) },
+      today:     { activities: activitiesForDate(todayStr),     plan: getPlanSessionForDate(todayStr) },
+      tomorrow:  { plan: getPlanSessionForDate(tomorrowStr) },
     }
 
     const currentGoal = loadGoal(athlete.id)
 
-    let profile = null
-    try {
-      const raw = localStorage.getItem(`onboarding_profile_${athlete.id}`)
-      if (raw) profile = JSON.parse(raw)
-    } catch {}
-
     setFeedbackLoading(true)
-    generateFeedback({ ftp, weight, wkg, goal: currentGoal, recentActivities: recent, weekSummary, profile })
+    generateFeedback({ ftp, goal: currentGoal, threeDay })
       .then(text => {
         setFeedback(text)
         cacheFeedback(athlete.id, text)

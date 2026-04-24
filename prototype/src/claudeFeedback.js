@@ -1,15 +1,13 @@
 // claudeFeedback.js — Claude API integration for coaching feedback
 
-const SYSTEM_PROMPT = `You are a cycling performance coach. Your job is to give the athlete honest, direct, specific feedback on whether their training is on track toward their goal.
+const SYSTEM_PROMPT = `You are a cycling coach giving a daily check-in. Look at what the athlete did yesterday, what is on today, and what is coming tomorrow, then write a single short paragraph of human feedback.
 
 Rules:
-- Be direct and honest. You are a performance coach and a best friend combined — not brutal, but never soft.
-- Write in plain prose. No bullet points. 3–5 sentences maximum.
-- Name the arithmetic when the numbers tell a story — good or bad.
-- Never say "great job" generically. Be specific about what the numbers actually show.
-- If training is consistent and progress is clear, say so and say what it means for the goal.
-- If there is a risk, name it plainly and tell the athlete what would fix it.
-- Never use the word "journey". Never moralise.`
+- Focus on sustainability: are they rested enough, is the load manageable, is recovery in place?
+- Maximum 3 sentences. Plain prose, no bullet points.
+- Be direct and warm — like a trusted coach, not a robot.
+- If there is a risk or imbalance, name it plainly and say what to adjust.
+- Never say "great job" generically. Never use the word "journey". Never moralise.`
 
 function todayDateStr() {
   const d = new Date()
@@ -37,57 +35,40 @@ export function cacheFeedback(athleteId, text) {
   )
 }
 
-export async function generateFeedback({ ftp, weight, wkg, goal, recentActivities, weekSummary, profile }) {
-  return 'Claude will populate this.'
-
+export async function generateFeedback({ ftp, goal, threeDay }) {
   const lines = []
 
-  lines.push('## Athlete metrics')
-  lines.push(`FTP: ${ftp ? `${ftp}W` : 'not yet detected'}`)
-  lines.push(`Weight: ${weight ? `${weight}kg` : 'not connected'}`)
-  lines.push(`W/kg: ${wkg ? wkg : 'not available'}`)
-
-  lines.push('\n## Goal')
-  if (goal?.type === 'ftp') {
-    lines.push(`Target: FTP ${goal.ftpTarget}W by ${goal.targetDate || 'unset date'}`)
-    if (goal.startFtp && goal.ftpTarget && ftp) {
-      const pct = Math.round(((ftp - goal.startFtp) / (goal.ftpTarget - goal.startFtp)) * 100)
-      lines.push(`Progress: ${Math.max(0, pct)}% of the way from ${goal.startFtp}W to ${goal.ftpTarget}W`)
-    }
-  } else if (goal?.type === 'distance') {
-    lines.push(`Target: Complete a ${goal.distanceTarget}km ride by ${goal.targetDate || 'unset date'}`)
-  } else {
-    lines.push('No goal set yet.')
+  if (ftp) lines.push(`Athlete FTP: ${ftp}W`)
+  if (goal?.type === 'ftp' && goal.ftpTarget) {
+    lines.push(`Goal: reach FTP ${goal.ftpTarget}W by ${goal.targetDate || 'unset date'}`)
+  } else if (goal?.type === 'distance' && goal.distanceTarget) {
+    lines.push(`Goal: complete a ${goal.distanceTarget}km ride by ${goal.targetDate || 'unset date'}`)
   }
 
-  lines.push('\n## Recent activities (last 14 days)')
-  if (recentActivities.length === 0) {
-    lines.push('No activities recorded in the past 14 days.')
-  } else {
-    recentActivities.forEach(a => {
-      const parts = [a.date, a.type, a.duration]
-      if (a.np) parts.push(`${a.np}W NP`)
-      if (a.tss) parts.push(`TSS ${a.tss}`)
-      lines.push(`- ${parts.join(' · ')}`)
-    })
-  }
-
-  lines.push('\n## Weekly training load')
-  lines.push(`This week: ${weekSummary.thisWeek.sessions} session${weekSummary.thisWeek.sessions !== 1 ? 's' : ''}, TSS ${weekSummary.thisWeek.tss}`)
-  lines.push(`Last week: ${weekSummary.lastWeek.sessions} session${weekSummary.lastWeek.sessions !== 1 ? 's' : ''}, TSS ${weekSummary.lastWeek.tss}`)
-
-  if (profile) {
-    lines.push('\n## Training profile')
-    if (profile.weeklyHours) lines.push(`Stated weekly availability: ${profile.weeklyHours} hours`)
-    if (profile.lifeContext) lines.push(`Life context: ${profile.lifeContext}`)
-    if (profile.structureRelationship) lines.push(`Relationship with structure: ${profile.structureRelationship}`)
-    if (profile.disciplineGoal) lines.push(`Discipline goal: ${profile.disciplineGoal}`)
-    if (profile.nonNegotiables?.length) {
-      lines.push(`Non-negotiables: ${profile.nonNegotiables.join(', ')}`)
+  function describeDay(label, day) {
+    if (!day) return
+    const parts = []
+    if (day.activities?.length) {
+      day.activities.forEach(a => {
+        const p = [a.type, a.duration]
+        if (a.tss) p.push(`TSS ${a.tss}`)
+        parts.push(p.join(', '))
+      })
+      lines.push(`${label}: ${parts.join(' + ')} (completed)`)
+    } else if (day.plan) {
+      lines.push(`${label}: ${day.plan.label} planned — ${day.plan.duration}min, ${day.plan.intensity}`)
+    } else {
+      lines.push(`${label}: rest`)
     }
   }
 
-  lines.push('\nWrite your coaching comment now.')
+  describeDay('Yesterday', threeDay?.yesterday)
+  describeDay('Today', threeDay?.today)
+  if (threeDay?.tomorrow?.plan) {
+    lines.push(`Tomorrow: ${threeDay.tomorrow.plan.label} planned — ${threeDay.tomorrow.plan.duration}min, ${threeDay.tomorrow.plan.intensity}`)
+  } else {
+    lines.push('Tomorrow: rest')
+  }
 
   const userMessage = lines.join('\n')
 

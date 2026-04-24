@@ -269,12 +269,14 @@ export default function App() {
         onboardedAt: new Date().toISOString().split('T')[0],
       }))
 
-      // Generate and save a 1-week plan from onboarding data
-      const weekPlan = generateWeekPlan({
-        goalType: profile.goalType,
-        daysPerWeek: profile.daysPerWeek ?? 4,
-      })
-      savePlan(athleteId, weekPlan)
+      // Generate a fallback plan only when no uploaded plan exists (i.e. not AI coaching)
+      if (profile.coaching !== 'ai' && profile.coaching !== 'self') {
+        const weekPlan = generateWeekPlan({
+          goalType: profile.goalType,
+          daysPerWeek: profile.daysPerWeek ?? 4,
+        })
+        savePlan(athleteId, weekPlan)
+      }
 
       // Supabase sync (best-effort — prototype)
       await saveProfile(athleteId, profile)

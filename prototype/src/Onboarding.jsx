@@ -112,18 +112,121 @@ function getLongestRide(activities) {
   }
 }
 
+// ── Claude plan generation screen (self-coached) ─────────────────────────────
+
+const PLAN_SYSTEM_PROMPT = `You are a cycling training planner. Generate a personal training plan based on the athlete's profile.
+
+Output ONLY Markdown blocks in this exact format — one block per training day, no rest days, no intro text, no section headers, no explanation:
+
+## YYYY-MM-DD
+**Session:** [name]
+**Duration:** [minutes] min
+**Intensity:** [easy / moderate / hard]
+**Description:** [what to do and why]`
+
+function ClaudeGeneratePlanScreen({ profile, onDone }) {
+  const [status, setStatus] = useState('generating') // 'generating' | 'done' | 'error'
+  const [sessionCount, setSessionCount] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    async function generate() {
+      try {
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const startDate = tomorrow.toISOString().split('T')[0]
+
+        const lines = [`Generate an 8-week cycling training plan starting from ${startDate}.`, '', 'Athlete profile:']
+        if (profile.goalType === 'ftp' && profile.ftpTarget) {
+          lines.push(`- Goal: reach FTP ${profile.ftpTarget}W by ${profile.targetDate || 'end of plan'}`)
+        } else if (profile.goalType === 'granfondo' && profile.distanceTarget) {
+          lines.push(`- Goal: complete a ${profile.distanceTarget}km ride by ${profile.targetDate || 'end of plan'}`)
+        }
+        if (profile.ftp) lines.push(`- Current FTP: ${profile.ftp}W`)
+        if (profile.weight) lines.push(`- Weight: ${profile.weight}kg`)
+        lines.push(`- Training days per week: ${profile.daysPerWeek ?? 4}`)
+        if (profile.activityLevel) lines.push(`- Activity level: ${profile.activityLevel}`)
+        if (profile.trainingTime) lines.push(`- Preferred training time: ${profile.trainingTime}`)
+
+        const userMessage = lines.join('\n')
+
+        const planRes = await fetch('/api/claude-feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ systemPrompt: PLAN_SYSTEM_PROMPT, userMessage, maxTokens: 4000 }),
+        })
+        const planData = await planRes.json()
+        if (!planRes.ok) throw new Error(planData.error || 'Plan generation failed.')
+        const markdown = planData.content?.[0]?.text
+        if (!markdown) throw new Error('Empty response from Claude.')
+
+        const today = new Date().toISOString().split('T')[0]
+        const parseRes = await fetch('/api/parse-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown, today }),
+        })
+        const parseData = await parseRes.json()
+        if (!parseRes.ok) throw new Error(parseData.error || 'Could not parse generated plan.')
+        const count = Object.keys(parseData.plan).length
+        if (count === 0) throw new Error('Generated plan had no sessions.')
+        saveUploadedPlan(parseData.plan)
+        setSessionCount(count)
+        setStatus('done')
+      } catch (e) {
+        setError(e.message)
+        setStatus('error')
+      }
+    }
+    generate()
+  }, [])
+
+  if (status === 'generating') {
+    return (
+      <div className="onboarding">
+        <div className="onboarding-step">
+          <div style={{ textAlign: 'center', padding: '32px 0 24px' }}>
+            <p className="onboarding-sub" style={{ marginTop: 40 }}>Building your plan…</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="onboarding">
+        <div className="onboarding-step">
+          <h1 className="onboarding-heading">Something went wrong.</h1>
+          <div style={{ background: 'rgba(255,59,48,0.08)', borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: 'var(--red)', lineHeight: 1.5 }}>
+            {error}
+          </div>
+          <button className="btn-primary" onClick={() => { setStatus('generating'); setError(null) }}>Try again</button>
+          <div className="spacer" />
+          <button className="btn-secondary" onClick={onDone}>Skip for now</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="onboarding">
+      <div className="onboarding-step">
+        <div style={{ textAlign: 'center', padding: '32px 0 24px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+          <h1 className="onboarding-heading">Your plan is ready.</h1>
+          <p className="onboarding-sub">{sessionCount} sessions across the next 8 weeks. The dashboard will follow it from today.</p>
+        </div>
+        <div className="spacer" />
+        <button className="btn-primary" onClick={onDone}>Continue</button>
+      </div>
+    </div>
+  )
+}
+
 // ── AI coach upload screen ───────────────────────────────────────────────────
 
-const AI_COACH_PROMPT = `I'm using a cycling training app. Please create a training plan for the next 8 weeks in Markdown format.
-
-For each training day, include:
-- The date (YYYY-MM-DD)
-- Session name
-- Duration in minutes
-- Intensity (easy, moderate, or hard)
-- A brief description of the workout objective
-
-Use this format for each day:
+const AI_COACH_PROMPT = `Turn my current training plan into this format, one block per training day:
 
 ## YYYY-MM-DD
 **Session:** [name]
@@ -131,7 +234,9 @@ Use this format for each day:
 **Intensity:** [easy / moderate / hard]
 **Description:** [what to do and why]
 
-Skip rest days entirely.`
+Use real dates. Skip rest days. Output only the Markdown, no extra text. Save it as a .md file.
+
+[paste your plan here]`
 
 function AICoachUploadScreen({ onDone }) {
   const [uploading, setUploading] = useState(false)
@@ -192,7 +297,7 @@ function AICoachUploadScreen({ onDone }) {
     <div className="onboarding">
       <div className="onboarding-step">
         <h1 className="onboarding-heading">Upload your training plan.</h1>
-        <p className="onboarding-sub">Ask your AI coach to export your plan as a Markdown file, then upload it here. Use the prompt below to get the right format.</p>
+        <p className="onboarding-sub">Copy the prompt below, paste it into your AI coach along with your current plan, then upload the Markdown file it gives you.</p>
 
         <div style={{ background: 'var(--card)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -390,6 +495,8 @@ export default function Onboarding({ onComplete, session }) {
 
   // AI coach plan upload (shown after step 8 when coaching === 'ai')
   const [aiUploadStep, setAiUploadStep] = useState(false)
+  // Claude plan generation (shown after step 8 when coaching === 'self')
+  const [selfGenerateStep, setSelfGenerateStep] = useState(false)
 
   // Power goal (Step 2 — power branch)
   const [powerGoalMetric, setPowerGoalMetric] = useState(null)
@@ -463,9 +570,9 @@ export default function Onboarding({ onComplete, session }) {
   // ── Auto-skip high-confidence inference steps ──
   useEffect(() => {
     if (inferenceConfidence !== 'high' || loadingData) return
-    if (step === 3 && activityLevel) { setStep(s => s + 1); return }
-    if (step === 4 && daysPerWeek !== null && trainingTime) { setStep(s => s + 1); return }
-    if (step === 6 && structure) { setStep(s => s + 1); return }
+    if (step === 4 && activityLevel) { setStep(s => s + 1); return }
+    if (step === 5 && daysPerWeek !== null && trainingTime) { setStep(s => s + 1); return }
+    if (step === 7 && structure) { setStep(s => s + 1); return }
   }, [step, inferenceConfidence, loadingData, activityLevel, daysPerWeek, trainingTime, structure])
 
   const ftp = detectedFtp?.ftp ?? null
@@ -475,9 +582,21 @@ export default function Onboarding({ onComplete, session }) {
   function next() { setStep(s => s + 1) }
   function back() { setStep(s => s - 1) }
 
-  function handleStep8Continue() {
+  function handleCoachingContinue() {
     if (coaching === 'ai') {
       setAiUploadStep(true)
+    } else {
+      next()
+    }
+  }
+
+  function handleDisciplineContinue() {
+    next()
+  }
+
+  function handleKeepingContinue() {
+    if (coaching === 'self') {
+      setSelfGenerateStep(true)
     } else {
       next()
     }
@@ -523,7 +642,15 @@ export default function Onboarding({ onComplete, session }) {
 
   // ── AI coach upload ──
   if (aiUploadStep) return (
-    <AICoachUploadScreen onDone={() => { setAiUploadStep(false); next() }} />
+    <AICoachUploadScreen onDone={() => { setAiUploadStep(false); setStep(6) }} />
+  )
+
+  // ── Claude plan generation ──
+  if (selfGenerateStep) return (
+    <ClaudeGeneratePlanScreen
+      profile={{ goalType, ftpTarget, distanceTarget, targetDate, activityLevel, daysPerWeek, trainingTime, ftp, weight }}
+      onDone={() => { setSelfGenerateStep(false); next() }}
+    />
   )
 
   // ── Loading ──
@@ -692,8 +819,8 @@ export default function Onboarding({ onComplete, session }) {
     </div>
   )
 
-  // ── Step 1: Goal type ──
-  if (step === 1) return (
+  // ── Step 2: Goal type ──
+  if (step === 2) return (
     <div className="onboarding">
       <div className="onboarding-step">
         <ProgressBar step={step} />
@@ -752,8 +879,8 @@ export default function Onboarding({ onComplete, session }) {
     </div>
   )
 
-  // ── Step 2: Goal details ──
-  if (step === 2) {
+  // ── Step 3: Goal details ──
+  if (step === 3) {
     const startDateValid = goalStarted === 'now' || (goalStarted === 'already' && !!goalStartDate)
 
     const startBlock = targetDate ? (
@@ -1068,8 +1195,8 @@ export default function Onboarding({ onComplete, session }) {
     )
   }
 
-  // ── Step 3: Activity level ──
-  if (step === 3) {
+  // ── Step 4: Activity level ──
+  if (step === 4) {
     const levelLabel = activityLevelOptions.find(o => o.value === inferredLevel)?.label
 
     // Medium confidence: show confirmation
@@ -1110,8 +1237,8 @@ export default function Onboarding({ onComplete, session }) {
     )
   }
 
-  // ── Step 4: Availability ──
-  if (step === 4) {
+  // ── Step 5: Availability ──
+  if (step === 5) {
 
     // Sub-step A: training frequency
     if (changingDays === null) {
@@ -1206,8 +1333,8 @@ export default function Onboarding({ onComplete, session }) {
     return null
   }
 
-  // ── Step 5: Life context ──
-  if (step === 5) return (
+  // ── Step 6: Life context ──
+  if (step === 6) return (
     <div className="onboarding">
       <div className="onboarding-step">
         <ProgressBar step={step} />
@@ -1227,8 +1354,8 @@ export default function Onboarding({ onComplete, session }) {
     </div>
   )
 
-  // ── Step 6: Structure relationship ──
-  if (step === 6) {
+  // ── Step 7: Structure relationship ──
+  if (step === 7) {
     const structureLabel = structureOptions.find(o => o.value === inferredStructure)?.label
 
     if (inferredStructure && structureConfirmed === null && inferenceConfidence === 'medium') return (
@@ -1267,8 +1394,8 @@ export default function Onboarding({ onComplete, session }) {
     )
   }
 
-  // ── Step 7: Consistency goal ──
-  if (step === 7) return (
+  // ── Step 8: Consistency goal ──
+  if (step === 8) return (
     <div className="onboarding">
       <div className="onboarding-step">
         <ProgressBar step={step} />
@@ -1276,14 +1403,14 @@ export default function Onboarding({ onComplete, session }) {
         <p className="onboarding-sub">Separate from your performance goal. This shapes how the app talks to you over time.</p>
         <Picker options={consistencyOptions} value={discipline} onChange={setDiscipline} />
         <div className="spacer" />
-        <button className="btn-primary" onClick={next} disabled={!discipline}>Continue</button>
+        <button className="btn-primary" onClick={handleDisciplineContinue} disabled={!discipline}>Continue</button>
         <button className="btn-secondary" onClick={back}>Back</button>
       </div>
     </div>
   )
 
-  // ── Step 8: Coaching question (new in v3) ──
-  if (step === 8) return (
+  // ── Step 1: Coaching question ──
+  if (step === 1) return (
     <div className="onboarding">
       <div className="onboarding-step">
         <ProgressBar step={step} />
@@ -1295,17 +1422,21 @@ export default function Onboarding({ onComplete, session }) {
             <button
               key={opt.value}
               className={`picker-option coaching-option${coaching === opt.value ? ' selected' : ''}`}
-              onClick={() => setCoaching(opt.value)}
-              style={{ textAlign: 'left' }}
+              onClick={() => !opt.comingSoon && setCoaching(opt.value)}
+              disabled={opt.comingSoon}
+              style={{ textAlign: 'left', opacity: opt.comingSoon ? 0.5 : 1, cursor: opt.comingSoon ? 'default' : 'pointer' }}
             >
-              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 3 }}>{opt.label}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>{opt.label}</span>
+                {opt.comingSoon && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--card)', borderRadius: 4, padding: '2px 6px' }}>Coming soon</span>}
+              </div>
               <div style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>{opt.sub}</div>
             </button>
           ))}
         </div>
 
         <div className="spacer" />
-        <button className="btn-primary" onClick={handleStep8Continue} disabled={!coaching}>Continue</button>
+        <button className="btn-primary" onClick={handleCoachingContinue} disabled={!coaching}>Continue</button>
         <button className="btn-secondary" onClick={back}>Back</button>
       </div>
     </div>
@@ -1447,7 +1578,7 @@ export default function Onboarding({ onComplete, session }) {
   // ── Step 11: Supporting activities B ──
   if (step === 11) {
     if (doingActivities.length === 0) {
-      next()
+      handleKeepingContinue()
       return null
     }
     return (
@@ -1464,7 +1595,7 @@ export default function Onboarding({ onComplete, session }) {
           />
 
           <div className="spacer" />
-          <button className="btn-primary" onClick={next}>Continue</button>
+          <button className="btn-primary" onClick={handleKeepingContinue}>Continue</button>
           <button className="btn-secondary" onClick={back}>Back</button>
         </div>
       </div>
@@ -1476,7 +1607,9 @@ export default function Onboarding({ onComplete, session }) {
     ? [...breakdown.sprint, ...breakdown.attack, ...breakdown.climb].find(r => r.label === powerGoalMetric)?.watts ?? null
     : null
 
-  const goalSummary = goalType === 'ftp'
+  const goalSummary = coaching === 'ai'
+    ? 'Your plan is uploaded and the app is ready to follow it.'
+    : goalType === 'ftp'
     ? `Target ${ftpTarget}W${ftp ? ` — up from your current ${ftp}W` : ''}.`
     : goalType === 'power'
     ? `Target ${powerGoalTarget}W for ${powerGoalMetric}${powerCurrentWatts ? ` — currently at ${powerCurrentWatts}W` : ''}.`

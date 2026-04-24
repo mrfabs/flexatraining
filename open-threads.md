@@ -22,14 +22,6 @@ Active work in this project. Read at the start of every session and surface any 
 
 ---
 
-## Claude Feedback Stubbed
-
-**Status:** Done — stub in place  
-**What was done:** `generateFeedback` in `prototype/src/claudeFeedback.js` returns `'Claude will populate this.'` immediately. No API calls are made. `ANTHROPIC_API_KEY` is not set in Vercel.  
-**What to do next:** When ready to enable real feedback, remove the two stub lines at the top of `generateFeedback` and add `ANTHROPIC_API_KEY` to Vercel's Production environment only.  
-**Last updated:** 2026-04-23
-
----
 
 ## Stats + Dashboard Rework — Round 2
 
@@ -48,26 +40,20 @@ Active work in this project. Read at the start of every session and surface any 
 
 ---
 
-## Plan Generation — Richer Parameters
+## Plan Generation and Onboarding Overhaul
 
-**Status:** Design decision pending  
-**What was done:** Identified the full parameter set the plan generator should use. Currently it only takes `goalType` and `daysPerWeek`. The full list agreed on:
+**Status:** Shipped — needs user testing  
+**What was done:**
+- Onboarding flow reordered: coaching question is now step 1 (before goal-setting)
+- AI coach path: user uploads existing plan as `.md` file, skips goal steps, goes through context questions (life context, structure, consistency), then non-negotiables and supporting activities before the done screen
+- Self-coached path: goes through full goal-setting flow, then context questions, then non-negotiables/supporting/keeping activities, then Claude auto-generates an 8-week plan via API before the done screen
+- Claude feedback un-stubbed: `generateFeedback` now calls the API. System prompt updated to focus on yesterday/today/tomorrow, sustainability, max 3 sentences. Dashboard passes a 3-day window instead of 14-day history
+- "I have a coach" option marked as Coming Soon (disabled in picker)
+- Hardcoded rule-based plan (`plan.js`) no longer generated for `ai` or `self` coaching paths — only the Claude-generated/uploaded plan is used
+- AI coach prompt updated: now says "Turn my current training plan into this format" and instructs user to save as `.md`
 
-1. Current FTP
-2. Current weight
-3. Current power distribution
-4. Target goal
-5. Target date
-6. Week feedback — lifestyle signals and training misses
-7. Consistency feedback — builds a character for when consistency drifts or holds
-8. Coaching context — if self-coached: generate plan; if AI-coached: let user upload their existing plan as a .md file, treat it as highest priority input
-9. Non-negotiables — informs what to include and exclude
-10. Other types of training — treated as part of the training week, not noise
-11. What they're keeping — cross-training that stays in the mix
-
-**Key open question:** Parameters 6, 7, and 8 require Claude to act on meaningfully — a rule-based generator can only use them mechanically. Point 8 (AI coach upload) is also a new UX feature needing its own design. The decision needed is: do we un-stub Claude for plan generation and make this the primary Claude use case rather than daily commentary?  
-**What to do next:** Decide whether to un-stub Claude for plan generation. If yes, design the prompt around all 11 parameters above. Point 8 (AI coach upload flow) needs separate UX design regardless.  
-**Last updated:** 2026-04-23
+**What to do next:** User test both flows end to end. Key things to verify: (1) Claude plan generation completes and populates the dashboard calendar, (2) dashboard feedback card shows real coaching text, (3) AI coach upload parses correctly and calendar populates, (4) Coming Soon badge on "I have a coach" renders correctly.  
+**Last updated:** 2026-04-24
 
 ---
 

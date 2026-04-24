@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return
   }
 
-  const { systemPrompt, userMessage } = req.body
+  const { systemPrompt, userMessage, maxTokens } = req.body
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 250,
+        max_tokens: maxTokens || 250,
         system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userMessage }],
       }),
