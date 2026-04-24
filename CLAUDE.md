@@ -27,7 +27,7 @@ This is a non-negotiable rule. No exceptions. No fallbacks. No workarounds.
 
 ## Project Overview
 
-Flexatraining — a cycling performance web app (React + Vite) that helps athletes train toward their goals. Deployed on Vercel. Backend via Supabase. AI coaching feedback via Claude API.
+Flexa — a cycling performance web app (React + Vite) that helps athletes train toward their goals. Deployed on Vercel. Backend via Supabase. AI coaching feedback via Claude API.
 
 This repository contains both the app code (`prototype/`) and all strategy and product thinking (`strategy/`). Strategic conversations belong here — no need to go elsewhere.
 

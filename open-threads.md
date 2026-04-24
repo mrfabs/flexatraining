@@ -7,7 +7,7 @@ Active work in this project. Read at the start of every session and surface any 
 ## Connect Vercel to GitHub
 
 **Status:** Done  
-**What was done:** GitHub repo at github.com/mrfabs/flexatraining connected to Vercel. Root directory set to `prototype/`. All env vars from `.env.example` added. `ANTHROPIC_API_KEY` intentionally excluded — Claude feedback is still stubbed.  
+**What was done:** GitHub repo at github.com/mrfabs/flexa connected to Vercel. Root directory set to `prototype/`. All env vars from `.env.example` added. `ANTHROPIC_API_KEY` intentionally excluded — Claude feedback is still stubbed.  
 **What to do next:** Nothing. Revisit when ready to enable real Claude feedback.  
 **Last updated:** 2026-04-24
 
