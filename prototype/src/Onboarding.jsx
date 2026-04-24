@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   structureOptions,
   consistencyOptions,
@@ -12,6 +12,7 @@ import {
 import { fetchActivities } from './strava.js'
 import { detectFTP, confidenceLabel, detectPowerBreakdown, ftpFromDurationPower } from './ftp.js'
 import { getWithingsSession, fetchLatestWeight, redirectToWithings, getManualWeight, setManualWeight } from './withings.js'
+import { saveUploadedPlan } from './uploadedPlan.js'
 
 // ── Inference helpers ────────────────────────────────────────────────────────
 
@@ -109,6 +110,133 @@ function getLongestRide(activities) {
     km: Math.round((longest.distance || 0) / 1000),
     date: new Date(longest.start_date_local).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
   }
+}
+
+// ── AI coach upload screen ───────────────────────────────────────────────────
+
+const AI_COACH_PROMPT = `I'm using a cycling training app. Please create a training plan for the next 8 weeks in Markdown format.
+
+For each training day, include:
+- The date (YYYY-MM-DD)
+- Session name
+- Duration in minutes
+- Intensity (easy, moderate, or hard)
+- A brief description of the workout objective
+
+Use this format for each day:
+
+## YYYY-MM-DD
+**Session:** [name]
+**Duration:** [minutes] min
+**Intensity:** [easy / moderate / hard]
+**Description:** [what to do and why]
+
+Skip rest days entirely.`
+
+function AICoachUploadScreen({ onDone }) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState(null)
+  const [sessionCount, setSessionCount] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const fileInputRef = useRef(null)
+
+  async function handleFile(file) {
+    if (!file) return
+    setError(null)
+    setUploading(true)
+    try {
+      const text = await file.text()
+      const today = new Date().toISOString().split('T')[0]
+      const res = await fetch('/api/parse-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: text, today }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed. Please try again.')
+      const count = Object.keys(data.plan).length
+      if (count === 0) throw new Error('No sessions found in the file. Check the format and try again.')
+      saveUploadedPlan(data.plan)
+      setSessionCount(count)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function copyPrompt() {
+    navigator.clipboard.writeText(AI_COACH_PROMPT).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }
+
+  if (sessionCount !== null) {
+    return (
+      <div className="onboarding">
+        <div className="onboarding-step">
+          <div style={{ textAlign: 'center', padding: '32px 0 24px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+            <h1 className="onboarding-heading">Plan uploaded.</h1>
+            <p className="onboarding-sub">{sessionCount} sessions loaded from your coach's plan. The dashboard will follow it for as long as it runs.</p>
+          </div>
+          <div className="spacer" />
+          <button className="btn-primary" onClick={onDone}>Continue</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="onboarding">
+      <div className="onboarding-step">
+        <h1 className="onboarding-heading">Upload your training plan.</h1>
+        <p className="onboarding-sub">Ask your AI coach to export your plan as a Markdown file, then upload it here. Use the prompt below to get the right format.</p>
+
+        <div style={{ background: 'var(--card)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Copy this prompt to your AI coach</span>
+            <button
+              onClick={copyPrompt}
+              style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 600 }}
+            >
+              {copied ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+          <pre style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'var(--font)', lineHeight: 1.5 }}>
+            {AI_COACH_PROMPT}
+          </pre>
+        </div>
+
+        {error && (
+          <div style={{ background: 'rgba(255,59,48,0.08)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--red)', lineHeight: 1.5 }}>
+            {error}
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".md,.txt"
+          style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])}
+          onClick={e => { e.target.value = '' }}
+        />
+
+        <button
+          className="btn-primary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? 'Parsing plan…' : error ? 'Try again' : 'Upload .md or .txt file'}
+        </button>
+
+        <div className="spacer" />
+        <button className="btn-secondary" onClick={onDone}>I'll add my plan later</button>
+      </div>
+    </div>
+  )
 }
 
 // ── Shared components ────────────────────────────────────────────────────────
@@ -253,8 +381,15 @@ export default function Onboarding({ onComplete, session }) {
   const [doingActivities, setDoingActivities] = useState([])
   const [keepingActivities, setKeepingActivities] = useState([])
 
-  // Step 0 breakdown toggle
+  // Step 0 breakdown toggle + FTP tooltip
   const [showBreakdown, setShowBreakdown] = useState(false)
+  const [showFtpTooltip, setShowFtpTooltip] = useState(false)
+
+  // Step 9 days-off picker
+  const [daysOff, setDaysOff] = useState([])
+
+  // AI coach plan upload (shown after step 8 when coaching === 'ai')
+  const [aiUploadStep, setAiUploadStep] = useState(false)
 
   // Power goal (Step 2 — power branch)
   const [powerGoalMetric, setPowerGoalMetric] = useState(null)
@@ -340,6 +475,14 @@ export default function Onboarding({ onComplete, session }) {
   function next() { setStep(s => s + 1) }
   function back() { setStep(s => s - 1) }
 
+  function handleStep8Continue() {
+    if (coaching === 'ai') {
+      setAiUploadStep(true)
+    } else {
+      next()
+    }
+  }
+
   function addCustomNonNeg() {
     const v = customInput.trim()
     if (v && !nonNegotiables.includes(v)) {
@@ -374,8 +517,14 @@ export default function Onboarding({ onComplete, session }) {
       inferenceConfidence,
       currentFtp: ftp,
       weight,
+      daysOff,
     })
   }
+
+  // ── AI coach upload ──
+  if (aiUploadStep) return (
+    <AICoachUploadScreen onDone={() => { setAiUploadStep(false); next() }} />
+  )
 
   // ── Loading ──
   if (loadingData) return (
@@ -391,41 +540,53 @@ export default function Onboarding({ onComplete, session }) {
     <div className="onboarding">
       <div className="onboarding-step">
         <h1 className="onboarding-heading">Your numbers.</h1>
-        <p className="onboarding-sub">Three numbers drive everything. Here's what we found.</p>
+        <p className="onboarding-sub">The most important metrics in cycling are power and weight.</p>
 
         <div className="metrics-grid" style={{ marginBottom: 24 }}>
-          <div className="metric-card">
-            <div className="metric-label">FTP</div>
+
+          {/* Power card — FTP + W/kg inline */}
+          <div className="metric-card" style={{ position: 'relative' }}>
+            <div className="metric-label">Power (FTP)</div>
             {ftp ? (
               <>
-                <div className="metric-value">{ftp}<span className="metric-unit">W</span></div>
-                <div className="metric-footer">
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{confidenceLabel(detectedFtp.confidence)}</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <div className="metric-value">{ftp}<span className="metric-unit">W</span></div>
+                  <button
+                    onClick={() => setShowFtpTooltip(v => !v)}
+                    style={{ fontSize: 14, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontFamily: 'inherit' }}
+                  >
+                    ⓘ
+                  </button>
                 </div>
+                {showFtpTooltip && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: 'var(--card)', borderRadius: 10, padding: '10px 12px', marginTop: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {detectedFtp?.sourceActivity?.name && (
+                      <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{detectedFtp.sourceActivity.name}</div>
+                    )}
+                    {detectedFtp?.sourceActivity?.start_date_local && (
+                      <div>{new Date(detectedFtp.sourceActivity.start_date_local).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                    )}
+                    <div style={{ marginTop: 4, color: 'var(--text-tertiary)' }}>{confidenceLabel(detectedFtp.confidence)}</div>
+                  </div>
+                )}
+                {wkg ? (
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 6 }}>{wkg} W/kg</div>
+                ) : (
+                  <div className="metric-footer" style={{ fontSize: 11 }}>Add weight to see W/kg</div>
+                )}
               </>
             ) : (
               <>
                 <div className="metric-value" style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>—</div>
                 <div className="metric-footer" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  Updates after your first qualifying ride
+                  Detected after your first qualifying ride
                 </div>
               </>
             )}
           </div>
 
+          {/* Weight card — manual entry primary */}
           <div className="metric-card">
-            <div className="metric-label">W/kg</div>
-            <div className="metric-value" style={{ fontSize: wkg ? 34 : 18, color: wkg ? 'var(--text)' : 'var(--text-tertiary)' }}>
-              {wkg ?? '—'}
-            </div>
-            {!wkg && (
-              <div className="metric-footer" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                Calculated from FTP ÷ weight
-              </div>
-            )}
-          </div>
-
-          <div className="metric-card wide">
             <div className="metric-label">Weight</div>
             {weight && !editingWeight ? (
               <>
@@ -435,50 +596,45 @@ export default function Onboarding({ onComplete, session }) {
                     {weightSource === 'withings' ? 'Withings' : 'Manual'}
                   </span>
                   <button onClick={() => { setWeightInput(String(weight)); setEditingWeight(true) }} style={{ fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    Update
+                    Edit
                   </button>
                 </div>
               </>
+            ) : editingWeight ? (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={weightInput}
+                  onChange={e => setWeightInput(e.target.value)}
+                  placeholder="74.5"
+                  autoFocus
+                  style={{ flex: 1, minWidth: 0, background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 15, fontFamily: 'var(--font)', outline: 'none' }}
+                />
+                <button
+                  onClick={() => {
+                    const v = parseFloat(weightInput)
+                    if (v > 0) { setManualWeight(v); setWeight(v); setWeightSource('manual') }
+                    setEditingWeight(false)
+                  }}
+                  style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}
+                >
+                  Save
+                </button>
+              </div>
             ) : (
               <>
                 <div className="metric-value" style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>—</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button onClick={redirectToWithings} className="weight-source-btn">Withings</button>
-                  <button disabled className="weight-source-btn" style={{ opacity: 0.35 }}>InBody</button>
-                </div>
-                {editingWeight ? (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={weightInput}
-                      onChange={e => setWeightInput(e.target.value)}
-                      placeholder="74.5"
-                      autoFocus
-                      style={{ flex: 1, background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 15, fontFamily: 'var(--font)', outline: 'none' }}
-                    />
-                    <button
-                      onClick={() => {
-                        const v = parseFloat(weightInput)
-                        if (v > 0) { setManualWeight(v); setWeight(v); setWeightSource('manual') }
-                        setEditingWeight(false)
-                      }}
-                      style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}
-                    >
-                      Save
-                    </button>
-                    <button onClick={() => setEditingWeight(false)} style={{ background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font)' }}>
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setEditingWeight(true)} style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>
-                    enter manually
-                  </button>
-                )}
+                <button
+                  onClick={() => setEditingWeight(true)}
+                  style={{ marginTop: 8, fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Add weight
+                </button>
               </>
             )}
           </div>
+
         </div>
 
         {/* Power breakdown (hidden behind toggle) */}
@@ -499,8 +655,11 @@ export default function Onboarding({ onComplete, session }) {
                     {breakdown[cat].map(row => {
                       const wkg = row.watts && weight ? Math.round((row.watts / weight) * 100) / 100 : null
                       return (
-                        <div key={row.label} className="breakdown-row" style={{ cursor: 'default' }}>
-                          <span className="breakdown-label">{row.label}</span>
+                        <div key={row.label} className="breakdown-row" style={{ cursor: 'default', background: row.label === '20min' ? 'rgba(0,122,255,0.05)' : undefined, borderRadius: row.label === '20min' ? 8 : undefined }}>
+                          <span className="breakdown-label">
+                            {row.label}
+                            {row.label === '20min' && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: 'var(--primary)', background: 'rgba(0,122,255,0.1)', borderRadius: 4, padding: '1px 5px' }}>FTP ref</span>}
+                          </span>
                           <div className="breakdown-values">
                             {row.watts
                               ? <>
@@ -558,14 +717,15 @@ export default function Onboarding({ onComplete, session }) {
             <div style={{ fontWeight: 700, fontSize: 15 }}>Target a power number</div>
             <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Pick a specific effort to improve</div>
           </button>
-          <button
-            className={`picker-option goal-type-card${goalType === 'granfondo' ? ' selected' : ''}`}
-            onClick={() => setGoalType('granfondo')}
+          <div
+            className="picker-option goal-type-card"
+            style={{ opacity: 0.4, position: 'relative' }}
           >
             <div style={{ fontSize: 28, marginBottom: 8 }}>🏔</div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Gran Fondo</div>
             <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Train for a target event</div>
-          </button>
+            <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 10, background: 'var(--border)', borderRadius: 6, padding: '2px 6px', color: 'var(--text-secondary)', fontWeight: 600 }}>Soon</div>
+          </div>
           {[
             { emoji: '🏊', label: 'Ironman', sub: 'Triathlon training' },
             { emoji: '🌄', label: 'Ultra race', sub: 'Long-distance events' },
@@ -1052,19 +1212,12 @@ export default function Onboarding({ onComplete, session }) {
       <div className="onboarding-step">
         <ProgressBar step={step} />
         <h1 className="onboarding-heading">What does your week look like?</h1>
-        <p className="onboarding-sub">Two people with the same schedule can have completely different relationships to training.</p>
-
-        {inferredDays && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--card)', borderRadius: 14, padding: '14px 16px', marginBottom: 20 }}>
-            <div style={{ background: 'var(--primary)', color: '#fff', borderRadius: 10, width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, flexShrink: 0 }}>
-              {inferredDays}
-            </div>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>days a week</div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Based on your last 4 weeks of Strava data</div>
-            </div>
-          </div>
-        )}
+        <p className="onboarding-sub">
+          {inferredDays
+            ? `Your Strava shows ~${inferredDays} days a week${inferredTime && inferredTime !== 'When it works' ? `, mostly ${inferredTime.toLowerCase()}` : ''}. Two people with the same numbers can have very different relationships to training.`
+            : 'Two people with the same schedule can have completely different relationships to training.'
+          }
+        </p>
 
         <Picker options={lifeContextOptions} value={lifeContext} onChange={setLifeContext} />
         <div className="spacer" />
@@ -1151,62 +1304,114 @@ export default function Onboarding({ onComplete, session }) {
           ))}
         </div>
 
-        {coaching === 'ai' && (
-          <div className="ai-coach-note">
-            <p>Integration with AI coaching assistants is coming. For now, tell us which platform you use — we'll capture it for when we build the connection.</p>
-          </div>
-        )}
-
         <div className="spacer" />
-        <button className="btn-primary" onClick={next} disabled={!coaching}>Continue</button>
+        <button className="btn-primary" onClick={handleStep8Continue} disabled={!coaching}>Continue</button>
         <button className="btn-secondary" onClick={back}>Back</button>
       </div>
     </div>
   )
 
   // ── Step 9: Non-negotiables ──
-  if (step === 9) return (
-    <div className="onboarding">
-      <div className="onboarding-step">
-        <ProgressBar step={step} />
-        <h1 className="onboarding-heading">What's non-negotiable?</h1>
-        <p className="onboarding-sub">Things you'll always do regardless of the plan. The app never treats these as missed training.</p>
+  if (step === 9) {
+    const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const DAYS_OFF_KEY = 'Always take specific days off'
 
-        <MultiSelect options={nonNegotiablePresets} values={nonNegotiables} onChange={setNonNegotiables} />
+    function toggleNonNeg(key) {
+      setNonNegotiables(prev =>
+        prev.includes(key) ? prev.filter(n => n !== key) : [...prev, key]
+      )
+    }
 
-        {nonNegotiables.filter(n => !nonNegotiablePresets.includes(n)).map(c => (
-          <div key={c} className="custom-tag">
-            <span>{c}</span>
-            <button onClick={() => setNonNegotiables(nonNegotiables.filter(n => n !== c))}>×</button>
+    function toggleDayOff(day) {
+      setDaysOff(prev =>
+        prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+      )
+    }
+
+    const customItems = nonNegotiables.filter(n => !nonNegotiablePresets.includes(n))
+
+    return (
+      <div className="onboarding">
+        <div className="onboarding-step">
+          <ProgressBar step={step} />
+          <h1 className="onboarding-heading">What's non-negotiable?</h1>
+          <p className="onboarding-sub">Things you'll always do regardless of the plan. The app never treats these as missed training.</p>
+
+          <div className="picker-grid" style={{ gridTemplateColumns: '1fr', gap: 8 }}>
+            {nonNegotiablePresets.map(key => {
+              const isSelected = nonNegotiables.includes(key)
+              return (
+                <div key={key}>
+                  <button
+                    className={`picker-option${isSelected ? ' selected' : ''}`}
+                    onClick={() => toggleNonNeg(key)}
+                    style={{ textAlign: 'left', padding: '13px 16px', width: '100%', display: 'flex', alignItems: 'center', gap: 10 }}
+                  >
+                    <span style={{ opacity: isSelected ? 1 : 0.3, fontSize: 13 }}>{isSelected ? '✓' : '○'}</span>
+                    {key}
+                  </button>
+                  {key === DAYS_OFF_KEY && isSelected && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 4px 2px' }}>
+                      {DAYS_OF_WEEK.map(day => (
+                        <button
+                          key={day}
+                          onClick={() => toggleDayOff(day)}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            borderRadius: 8,
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontFamily: 'var(--font)',
+                            background: daysOff.includes(day) ? 'var(--primary)' : 'var(--bg)',
+                            color: daysOff.includes(day) ? '#fff' : 'var(--text-secondary)',
+                          }}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        ))}
 
-        <div className="input-row" style={{ marginTop: 12 }}>
-          <input
-            className="input-field"
-            type="text"
-            value={customInput}
-            onChange={e => setCustomInput(e.target.value)}
-            placeholder="Add your own…"
-            onKeyDown={e => e.key === 'Enter' && addCustomNonNeg()}
-          />
-          <button
-            className="input-suffix"
-            onClick={addCustomNonNeg}
-            style={{ cursor: 'pointer', color: customInput.trim() ? 'var(--primary)' : 'var(--text-tertiary)', background: 'var(--card)', border: 'none', borderRadius: 12 }}
-          >
-            Add
+          {customItems.map(c => (
+            <div key={c} className="custom-tag">
+              <span>{c}</span>
+              <button onClick={() => setNonNegotiables(nonNegotiables.filter(n => n !== c))}>×</button>
+            </div>
+          ))}
+
+          <div className="input-row" style={{ marginTop: 12 }}>
+            <input
+              className="input-field"
+              type="text"
+              value={customInput}
+              onChange={e => setCustomInput(e.target.value)}
+              placeholder="Add another…"
+              onKeyDown={e => e.key === 'Enter' && addCustomNonNeg()}
+            />
+            <button
+              className="input-suffix"
+              onClick={addCustomNonNeg}
+              style={{ cursor: 'pointer', color: customInput.trim() ? 'var(--primary)' : 'var(--text-tertiary)', background: 'var(--card)', border: 'none', borderRadius: 12 }}
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="spacer" />
+          <button className="btn-primary" onClick={next}>
+            {nonNegotiables.length === 0 ? 'Skip for now' : 'Continue'}
           </button>
+          <button className="btn-secondary" onClick={back}>Back</button>
         </div>
-
-        <div className="spacer" />
-        <button className="btn-primary" onClick={next}>
-          {nonNegotiables.length === 0 ? 'Skip for now' : 'Continue'}
-        </button>
-        <button className="btn-secondary" onClick={back}>Back</button>
       </div>
-    </div>
-  )
+    )
+  }
 
   // ── Step 10: Supporting activities A ──
   if (step === 10) return (

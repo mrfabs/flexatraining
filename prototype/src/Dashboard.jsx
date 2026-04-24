@@ -5,6 +5,7 @@ import { detectFTP } from './ftp.js'
 import { saveMetricSnapshot } from './auth.js'
 import { getWithingsSession, fetchLatestWeight, getManualWeight } from './withings.js'
 import { getPlanForDate, loadPlan } from './plan.js'
+import { getPlanSessionForDate } from './uploadedPlan.js'
 import { workoutUrl } from './vo2maxWorkouts.js'
 import { generateFeedback, getCachedFeedback, cacheFeedback } from './claudeFeedback.js'
 
@@ -127,8 +128,18 @@ function saveFeelingRating(activityId, feeling) {
 const FEELINGS = ['😴', '😐', '🙂', '💪', '🔥']
 
 function FeelingSelector({ activityId }) {
-  const [submitted, setSubmitted] = useState(!!getFeelingRatings()[String(activityId)])
-  if (submitted) return null
+  const [, forceUpdate] = useState(0)
+  const saved = getFeelingRatings()[String(activityId)]
+
+  if (saved) {
+    return (
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--separator)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 24 }}>{saved}</span>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>How you felt</span>
+      </div>
+    )
+  }
+
   return (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--separator)' }}>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>How did you feel?</div>
@@ -136,7 +147,7 @@ function FeelingSelector({ activityId }) {
         {FEELINGS.map(f => (
           <button
             key={f}
-            onClick={() => { saveFeelingRating(activityId, f); setSubmitted(true) }}
+            onClick={() => { saveFeelingRating(activityId, f); forceUpdate(n => n + 1) }}
             style={{
               flex: 1,
               background: 'var(--bg)',
@@ -391,7 +402,10 @@ function WeekPlanSection({ athleteId, weekDays, byDate, weekOffset, onWeekBack, 
           const dayStr = toDateStr(day)
           const dayActivities = byDate[dayStr] || []
           const isCompleted = dayActivities.length > 0
-          const session = plan?.[i] ?? null
+          const uploadedSession = getPlanSessionForDate(dayStr)
+          const session = uploadedSession
+            ? { ...uploadedSession, objective: uploadedSession.description }
+            : plan?.[i] ?? null
           const isExpanded = expandedDay === dayStr
           const isToday = dayStr === todayStr
           const dayLong = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })

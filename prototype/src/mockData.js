@@ -124,10 +124,9 @@ export const consistencyOptions = [
 
 export const nonNegotiablePresets = [
   'Long ride with friends on weekends',
-  'Weekly group ride or race',
-  'Always take Monday off',
-  'Never train on certain days',
-  'Upcoming events or sportives',
+  'Weekly virtual race',
+  'Always take specific days off',
+  'Specific cycling events',
 ]
 
 export const distanceGoals = [
@@ -155,7 +154,7 @@ export const lifeContextOptions = [
 export const coachingOptions = [
   {
     value: 'self',
-    label: 'I coach myself',
+    label: "I don't have a coach",
     sub: 'The app generates a training plan and populates your calendar',
   },
   {
