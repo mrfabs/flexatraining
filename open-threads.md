@@ -6,10 +6,10 @@ Active work in this project. Read at the start of every session and surface any 
 
 ## Connect Vercel to GitHub
 
-**Status:** Not started  
-**What was done:** GitHub repo created at github.com/mrfabs/flexatraining, pushed with all existing code. Vercel root directory is `prototype/` (set in `prototype/vercel.json`).  
-**What to do next:** Go to vercel.com, import the `mrfabs/flexatraining` repo, set root directory to `prototype/`, and add all env vars from `prototype/.env.example`. Do NOT add `ANTHROPIC_API_KEY` yet — Claude feedback is stubbed with a placeholder and credits should not run until deliberately enabled.  
-**Last updated:** 2026-04-23
+**Status:** Done  
+**What was done:** GitHub repo at github.com/mrfabs/flexatraining connected to Vercel. Root directory set to `prototype/`. All env vars from `.env.example` added. `ANTHROPIC_API_KEY` intentionally excluded — Claude feedback is still stubbed.  
+**What to do next:** Nothing. Revisit when ready to enable real Claude feedback.  
+**Last updated:** 2026-04-24
 
 ---
 
@@ -31,24 +31,20 @@ Active work in this project. Read at the start of every session and surface any 
 
 ---
 
-## Stats Tab + Dashboard Rework
+## Stats + Dashboard Rework — Round 2
 
-**Status:** Done  
+**Status:** In progress — user testing needed  
 **What was done:**
-- New `Stats.jsx` screen with FTP/W/kg/Weight metrics and Sprint / Attack / Climb power breakdown. Breakdown values editable — changing one ripples to FTP estimate.
-- New Stats tab added to App.jsx tab bar (Home / Stats / Profile).
-- Dashboard reordered: Claude analysis at top → calendar → goal progress → activity. Numbers section removed from Dashboard.
-- Rest day empty state now explains why rest matters.
-- Calories added to activity row (uses Strava `calories` field).
-- Onboarding Step 0: power breakdown now displayed below the three core metrics.
-- Onboarding Step 2 (FTP goal): currency-style linked W ↔ W/kg inputs (typing either updates the other). Breakdown table shows "Now" vs "Target" columns side by side. Tapping a target value adjusts FTP.
-- Onboarding Step 5: shows inferred training frequency from Strava before the life context question.
-- Discipline renamed to Consistency throughout (onboarding, profile, mockData).
-- Profile screen: removed "Your numbers", "Goal", and "Feedback history" sections. Those now live in Stats and Dashboard respectively.
-- Dashboard: added "This week's plan" section showing all 7 days with session labels, intensity dots, duration, and completion markers from Strava data.
-- Plan generation: removed `coaching === 'self'` gate — all users now get a plan generated at onboarding completion.
-**What to do next:** Test the full onboarding flow end to end — particularly the breakdown tinkering and W/W/kg conversion. Verify the week plan section renders correctly after onboarding completes.  
-**Last updated:** 2026-04-23
+- `Stats.jsx` fully rewritten: FTP, W/kg, and Weight merged into one combined card (three rows), each showing trend direction. FTP trend compares last 4 vs 4–8 weeks. W/kg trend derived from FTP delta. Weight trend tracked in localStorage (`weight_history`) and compared to 30 days prior — populates over time. Consistency signal card removed.
+- Progress chart in Stats: fixed baseline handling — `startFtp` now uses the FTP entered at onboarding as the true origin point, not conflated with current detected FTP. Past progress renders correctly when a goal start date is set.
+- Dashboard expanded activity view: replaced single text line with two rows of data tiles. Row 1 (always): NP, TSS, Cal. Cal falls back to `kilojoules` from Strava if `calories` is absent. Row 2 (if HR present): Avg HR, Avg Zone (Z1–Z5 derived from avg/peak HR ratio), Peak HR.
+- Feeling selector added to expanded activities: tap one emoji (😴😐🙂💪🔥) → saves to localStorage as `feeling_ratings[activityId]` → disappears permanently. No editing after submit.
+- Goal progress bar on Dashboard: removed status/pace rows below the track. Card now shows only title, date, percentage, and the progress bar with expected-pace tick.
+- Suggested workout card (planned sessions): added "Objective" block with `objective` and `targetZone` fields — stubbed as "Claude will personalize this" until populated.
+- Section `margin-top` reduced from 28px → 20px globally to reduce sparseness.
+- `CLAUDE.md` updated with product flow responsibility rule: any screen change must consider whether onboarding collects the data that screen needs.
+**What to do next:** User to test: (1) Stats metrics card with trend arrows, (2) expanded activity data tiles on Dashboard, (3) feeling selector submit-and-disappear, (4) progress chart with a goal that has a past start date set.  
+**Last updated:** 2026-04-24
 
 ---
 

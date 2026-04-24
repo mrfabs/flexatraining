@@ -46,7 +46,6 @@ function groupByDate(activities) {
   return map
 }
 
-// ISO week number (1-53)
 function getISOWeek(date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
@@ -55,11 +54,9 @@ function getISOWeek(date) {
   return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)
 }
 
-// Consecutive days with at least one activity, counting back from today
 function calcStreak(byDate) {
   let streak = 0
   const d = new Date()
-  // If today has no activity yet, start from yesterday
   if (!byDate[toDateStr(d)]?.length) d.setDate(d.getDate() - 1)
   while (byDate[toDateStr(d)]?.length) {
     streak++
@@ -69,6 +66,16 @@ function calcStreak(byDate) {
 }
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+
+function hrZone(avgHr, maxHr) {
+  if (!avgHr || !maxHr) return null
+  const pct = avgHr / maxHr
+  if (pct < 0.60) return 'Z1'
+  if (pct < 0.70) return 'Z2'
+  if (pct < 0.80) return 'Z3'
+  if (pct < 0.90) return 'Z4'
+  return 'Z5'
+}
 
 // ── Goal helpers ─────────────────────────────────────────────────────────────
 
@@ -83,17 +90,14 @@ function loadGoal(athleteId) {
       type: p.goalType,
       ftpTarget: p.ftpTarget ? parseFloat(p.ftpTarget) : null,
       distanceTarget: p.distanceTarget ? parseFloat(p.distanceTarget) : null,
+      powerGoalMetric: p.powerGoalMetric || null,
+      powerGoalTarget: p.powerGoalTarget ? parseFloat(p.powerGoalTarget) : null,
       targetDate: p.targetDate || null,
       startFtp: p.currentFtp ? parseFloat(p.currentFtp) : null,
+      goalStartDate: p.goalStartDate || null,
+      onboardedAt: p.onboardedAt || null,
     }
   } catch { return null }
-}
-
-function formatGoalDate(dateStr) {
-  if (!dateStr) return null
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
 }
 
 // ── RPE helpers ──────────────────────────────────────────────────────────────
@@ -106,6 +110,51 @@ function saveRpeRating(activityId, rpe) {
   const ratings = getRpeRatings()
   ratings[String(activityId)] = rpe
   localStorage.setItem('rpe_ratings', JSON.stringify(ratings))
+}
+
+// ── Feeling helpers ──────────────────────────────────────────────────────────
+
+function getFeelingRatings() {
+  try { return JSON.parse(localStorage.getItem('feeling_ratings') || '{}') } catch { return {} }
+}
+
+function saveFeelingRating(activityId, feeling) {
+  const ratings = getFeelingRatings()
+  ratings[String(activityId)] = feeling
+  localStorage.setItem('feeling_ratings', JSON.stringify(ratings))
+}
+
+const FEELINGS = ['😴', '😐', '🙂', '💪', '🔥']
+
+function FeelingSelector({ activityId }) {
+  const [submitted, setSubmitted] = useState(!!getFeelingRatings()[String(activityId)])
+  if (submitted) return null
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--separator)' }}>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>How did you feel?</div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {FEELINGS.map(f => (
+          <button
+            key={f}
+            onClick={() => { saveFeelingRating(activityId, f); setSubmitted(true) }}
+            style={{
+              flex: 1,
+              background: 'var(--bg)',
+              border: 'none',
+              borderRadius: 10,
+              padding: '10px 2px',
+              fontSize: 20,
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ── RPE row ──────────────────────────────────────────────────────────────────
@@ -176,12 +225,27 @@ function PlannedSessionCard({ session }) {
         <div className="planned-session-dot" style={{ background: intensityColor }} />
         <div className="planned-session-info">
           <div className="planned-session-label">{session.label}</div>
-          <div className="planned-session-meta">{session.duration} min · planned</div>
+          <div className="planned-session-meta">
+            {session.duration} min · {session.intensity}
+          </div>
         </div>
       </div>
 
+      {/* Objective / description (Claude will populate in future) */}
+      <div style={{ marginTop: 10, padding: '10px 12px', background: 'var(--bg)', borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Objective</div>
+        <div style={{ fontSize: 13, color: session.objective ? 'var(--text)' : 'var(--text-tertiary)' }}>
+          {session.objective || 'Claude will personalize this based on your recent training.'}
+        </div>
+        {session.targetZone && (
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+            Target: {session.targetZone}
+          </div>
+        )}
+      </div>
+
       {session.workout && (
-        <div className="mywhoosh-card">
+        <div className="mywhoosh-card" style={{ marginTop: 10 }}>
           <div className="mywhoosh-bar">
             <IntensityBar ifValue={session.workout.if} />
           </div>
@@ -204,6 +268,79 @@ function PlannedSessionCard({ session }) {
   )
 }
 
+// ── Goal progress bar (home) ──────────────────────────────────────────────────
+
+function GoalProgressBar({ goal, currentFtp }) {
+  if (!goal || !goal.targetDate) return null
+
+  const isFtp = goal.type === 'ftp' && goal.ftpTarget
+  const isPower = goal.type === 'power' && goal.powerGoalTarget && goal.powerGoalMetric
+  if (!isFtp && !isPower) return null
+
+  const startVal = goal.startFtp || currentFtp || 0
+  const targetVal = isFtp ? goal.ftpTarget : goal.powerGoalTarget
+  if (!startVal || startVal >= targetVal) return null
+
+  const today = new Date()
+  const startDate = goal.goalStartDate
+    ? new Date(goal.goalStartDate + 'T12:00:00')
+    : goal.onboardedAt
+    ? new Date(goal.onboardedAt + 'T12:00:00')
+    : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d })()
+  const endDate = new Date(goal.targetDate + 'T12:00:00')
+
+  const totalDays = Math.max(1, (endDate - startDate) / 86400000)
+  const elapsedDays = Math.max(0, (today - startDate) / 86400000)
+  const expectedPct = Math.min(100, (elapsedDays / totalDays) * 100)
+
+  const current = currentFtp || startVal
+  const valRange = targetVal - startVal
+  const actualPct = Math.min(100, Math.max(0, ((current - startVal) / valRange) * 100))
+
+  const diff = actualPct - expectedPct
+
+  let barColor = 'var(--primary)'
+  if (diff > 5) barColor = 'var(--green)'
+  else if (diff < -10) barColor = 'var(--red)'
+  else if (diff < -3) barColor = 'var(--orange)'
+
+  const daysLeft = Math.ceil((endDate - today) / 86400000)
+  const goalLabel = isFtp ? `FTP ${targetVal}W` : `${goal.powerGoalMetric} ${targetVal}W`
+  const dateStr = endDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  return (
+    <div className="section">
+      <div className="goal-card">
+        <div className="goal-header">
+          <div>
+            <div className="goal-title">{goalLabel}</div>
+            <div className="goal-date">
+              By {dateStr}{daysLeft > 0 ? ` · ${daysLeft} days to go` : ' · past target date'}
+            </div>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-secondary)' }}>{Math.round(actualPct)}%</div>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <div className="progress-track" style={{ overflow: 'visible', position: 'relative', marginBottom: 0 }}>
+            <div className="progress-fill" style={{ width: `${actualPct}%`, background: barColor }} />
+            {expectedPct > 1 && expectedPct < 99 && (
+              <div style={{
+                position: 'absolute',
+                left: `${expectedPct}%`,
+                top: -3, height: 12, width: 2,
+                background: 'var(--text-tertiary)',
+                borderRadius: 1,
+                transform: 'translateX(-50%)',
+              }} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Week plan section ────────────────────────────────────────────────────────
 
 const PLAN_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -214,42 +351,174 @@ const INTENSITY_COLOR = {
   hard:     'var(--red)',
 }
 
-function WeekPlanSection({ athleteId, weekDays, byDate }) {
+function WeekPlanSection({ athleteId, weekDays, byDate, weekOffset, onWeekBack, onWeekForward, ftp }) {
   const plan = athleteId ? loadPlan(athleteId) : null
-  if (!plan || plan.every(s => s === null)) return null
+  const todayStr = toDateStr(new Date())
+  const [expandedDay, setExpandedDay] = useState(todayStr)
+
+  useEffect(() => {
+    setExpandedDay(weekOffset === 0 ? todayStr : toDateStr(weekDays[0]))
+  }, [weekDays[0].getTime()])
+
+  const weekLabel = weekOffset === 0
+    ? 'This week'
+    : weekDays[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+      ' – ' + weekDays[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
   return (
     <div className="section">
-      <div className="section-label">This week's plan</div>
-      <div className="profile-card" style={{ gap: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div className="section-label" style={{ marginBottom: 0 }}>{weekLabel}</div>
+        <div style={{ display: 'flex', gap: 0, alignItems: 'center' }}>
+          <button
+            onClick={onWeekBack}
+            style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px 10px', fontFamily: 'var(--font)' }}
+          >
+            ‹
+          </button>
+          <button
+            onClick={onWeekForward}
+            disabled={weekOffset >= 0}
+            style={{ background: 'none', border: 'none', fontSize: 20, color: weekOffset >= 0 ? 'var(--text-tertiary)' : 'var(--text-secondary)', cursor: weekOffset >= 0 ? 'default' : 'pointer', padding: '2px 10px', fontFamily: 'var(--font)' }}
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <div className="profile-card">
         {weekDays.map((day, i) => {
-          const session = plan[i]
           const dayStr = toDateStr(day)
-          const done = !!(byDate[dayStr]?.length)
+          const dayActivities = byDate[dayStr] || []
+          const isCompleted = dayActivities.length > 0
+          const session = plan?.[i] ?? null
+          const isExpanded = expandedDay === dayStr
+          const isToday = dayStr === todayStr
+          const dayLong = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+          const isInteractive = isCompleted || !!session
+
+          let rowContent = null
+          if (isCompleted) {
+            const a = dayActivities[0]
+            const meta = activityMeta(a)
+            const tss = estimateTSS(a, ftp)
+            rowContent = (
+              <>
+                <span style={{ fontSize: 16 }}>{meta.emoji}</span>
+                <span style={{ fontSize: 14, color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {meta.label}{dayActivities.length > 1 ? ` +${dayActivities.length - 1}` : ''}
+                </span>
+                {tss && <span style={{ fontSize: 12, color: 'var(--text-tertiary)', flexShrink: 0 }}>TSS {tss}</span>}
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>{formatDuration(a.moving_time)}</span>
+                <span style={{ fontSize: 14, color: 'var(--green)', fontWeight: 700, flexShrink: 0, marginLeft: 2 }}>✓</span>
+              </>
+            )
+          } else if (session) {
+            rowContent = (
+              <>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: INTENSITY_COLOR[session.intensity] ?? 'var(--primary)', flexShrink: 0 }} />
+                <span style={{ fontSize: 14, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.label}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>{session.duration}min</span>
+              </>
+            )
+          } else {
+            rowContent = <span style={{ fontSize: 14, color: 'var(--text-tertiary)', flex: 1 }}>Rest</span>
+          }
 
           return (
-            <div key={dayStr} className="profile-row" style={{ gap: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', width: 28, flexShrink: 0 }}>
-                {PLAN_DAY_NAMES[i]}
-              </span>
+            <div key={dayStr}>
+              <div
+                className="profile-row"
+                style={{ gap: 8, cursor: isInteractive ? 'pointer' : 'default', background: isToday ? 'rgba(0,122,255,0.04)' : 'transparent' }}
+                onClick={() => isInteractive && setExpandedDay(isExpanded ? null : dayStr)}
+              >
+                <span style={{ fontSize: 13, fontWeight: isToday ? 700 : 600, color: isToday ? 'var(--primary)' : 'var(--text-secondary)', width: 72, flexShrink: 0 }}>
+                  {dayLong}
+                </span>
+                {rowContent}
+                {isInteractive && (
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                )}
+              </div>
 
-              {session ? (
-                <>
-                  <span
-                    style={{
-                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                      background: done ? 'var(--text-tertiary)' : INTENSITY_COLOR[session.intensity] ?? 'var(--primary)',
-                    }}
-                  />
-                  <span style={{ flex: 1, fontSize: 14, color: done ? 'var(--text-tertiary)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>
-                    {session.label}
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>
-                    {done ? '✓' : `${session.duration}min`}
-                  </span>
-                </>
-              ) : (
-                <span style={{ fontSize: 14, color: 'var(--text-tertiary)', flex: 1 }}>Rest</span>
+              {isExpanded && isCompleted && (
+                <div style={{ padding: '4px 16px 14px', borderTop: '1px solid var(--separator)' }}>
+                  {dayActivities.map(a => {
+                    const meta = activityMeta(a)
+                    const np = a.weighted_average_watts ? Math.round(a.weighted_average_watts) : null
+                    const tss = estimateTSS(a, ftp)
+                    // Strava list endpoint returns kilojoules; calories may also be present.
+                    // In cycling, kJ of mechanical work ≈ kcal burned (25% efficiency), so kJ ≈ kcal.
+                    const cals = a.calories
+                      ? Math.round(a.calories)
+                      : a.kilojoules
+                      ? Math.round(a.kilojoules)
+                      : null
+                    const hr = a.average_heartrate ? Math.round(a.average_heartrate) : null
+                    const peakHr = a.max_heartrate ? Math.round(a.max_heartrate) : null
+                    const zone = hr && peakHr ? hrZone(hr, peakHr) : null
+                    return (
+                      <div key={a.id} style={{ paddingTop: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <div className={`activity-icon ${meta.cls}`}>{meta.emoji}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600 }}>{meta.label}</div>
+                            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                              {formatDuration(a.moving_time)}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>NP</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: np ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                              {np ? <>{np}<span style={{ fontSize: 11, color: 'var(--text-secondary)' }}> W</span></> : '—'}
+                            </div>
+                          </div>
+                          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>TSS</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: tss ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                              {tss ?? '—'}
+                            </div>
+                          </div>
+                          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>Cal</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: cals ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                              {cals ?? '—'}
+                            </div>
+                          </div>
+                        </div>
+                        {hr && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 6 }}>
+                            <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>Avg HR</div>
+                              <div style={{ fontSize: 16, fontWeight: 700 }}>{hr}<span style={{ fontSize: 11, color: 'var(--text-secondary)' }}> bpm</span></div>
+                            </div>
+                            <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>Avg Zone</div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: zone ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                                {zone ?? '—'}
+                              </div>
+                            </div>
+                            <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>Peak HR</div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: peakHr ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                                {peakHr ? <>{peakHr}<span style={{ fontSize: 11, color: 'var(--text-secondary)' }}> bpm</span></> : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <FeelingSelector activityId={a.id} />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {isExpanded && !isCompleted && session && (
+                <div style={{ padding: '4px 16px 12px', borderTop: '1px solid var(--separator)' }}>
+                  <PlannedSessionCard session={session} />
+                </div>
               )}
             </div>
           )
@@ -284,7 +553,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
   const ftp = ftpResult?.ftp ?? null
   const wkg = ftp && weight ? Math.round((ftp / weight) * 100) / 100 : null
 
-  // Load weight (for wkg and Claude context — no UI here, editing lives in Stats)
   useEffect(() => {
     const manual = getManualWeight()
     if (manual) { setWeight(manual); onMetricsUpdate?.({ weight: manual }) }
@@ -297,7 +565,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
       .finally(() => setWeightLoading(false))
   }, [])
 
-  // Load Strava activities
   useEffect(() => {
     if (!session?.access_token) { setLoading(false); return }
     fetchActivities(session.access_token, 200)
@@ -319,7 +586,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
       .catch(() => { setError('Could not load Strava activities.'); setLoading(false) })
   }, [session])
 
-  // Generate Claude feedback once Strava and Withings have both finished loading
   useEffect(() => {
     if (loading || weightLoading || !athlete || activities.length === 0) return
 
@@ -374,11 +640,6 @@ export default function Dashboard({ session, onMetricsUpdate }) {
   }, [loading, weightLoading, athlete?.id, activities.length])
 
   const goal = loadGoal(athlete?.id)
-  const dayActivities = byDate[selectedDay] || []
-  const selectedDate = new Date(selectedDay + 'T12:00:00')
-  const plannedSession = athlete ? getPlanForDate(athlete.id, selectedDate) : null
-  const streak = calcStreak(byDate)
-  const weekNum = getISOWeek(weekDays[0])
 
   function handleWeekBack() {
     const next = weekOffset - 1
@@ -393,19 +654,10 @@ export default function Dashboard({ session, onMetricsUpdate }) {
     setSelectedDay(next === 0 ? todayStr : toDateStr(getWeekDays(next)[0]))
   }
 
-  const dayLabel = selectedDay === todayStr
-    ? 'Today'
-    : new Date(selectedDay + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-
   function handleRpeSave(activityId, rpe) {
     setRpeRatings(prev => ({ ...prev, [String(activityId)]: rpe }))
     setExpandedRpe(null)
   }
-
-  // Prev/next week numbers for the footer
-  const prevWeekNum = getISOWeek(getWeekDays(weekOffset - 1)[0])
-  const nextWeekNum = weekOffset < 0 ? getISOWeek(getWeekDays(weekOffset + 1)[0]) : null
-  const weekRangeLabel = `${weekDays[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${weekDays[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
 
   return (
     <div className="shell">
@@ -420,7 +672,7 @@ export default function Dashboard({ session, onMetricsUpdate }) {
 
       <div className="scroll-area">
 
-        {/* ── 1. Claude analysis ── */}
+        {/* Claude feedback */}
         {(feedback || feedbackLoading || feedbackError) && (
           <div className="section">
             {feedbackLoading && (
@@ -444,193 +696,19 @@ export default function Dashboard({ session, onMetricsUpdate }) {
           </div>
         )}
 
-        {/* ── 2. Week card ── */}
-        <div className="section">
-          <div className="week-card">
+        {/* Goal progress bar */}
+        <GoalProgressBar goal={goal} currentFtp={ftp} />
 
-            <div className="week-card-header">
-              <span className="week-card-title">
-                {weekOffset === 0 ? 'This week' : `Week ${weekNum}`}
-              </span>
-              {weekOffset === 0 && streak > 0 && (
-                <span className="streak-badge">🔥 {streak}</span>
-              )}
-            </div>
-
-            <div className="week-days">
-              {weekDays.map((day, i) => {
-                const dayStr = toDateStr(day)
-                const isSelected = dayStr === selectedDay
-                const isToday = dayStr === todayStr
-                const hasActivity = !!(byDate[dayStr]?.length)
-                return (
-                  <button
-                    key={dayStr}
-                    className={`day-cell${isSelected ? ' selected' : ''}${isToday ? ' today' : ''}`}
-                    onClick={() => setSelectedDay(dayStr)}
-                  >
-                    <span className="day-label">{DAY_LABELS[i]}</span>
-                    <span className="day-num">{day.getDate()}</span>
-                    <span className={`day-dot${hasActivity ? ' has-activity' : ''}`} />
-                  </button>
-                )
-              })}
-            </div>
-
-            <div className="week-card-footer">
-              <button className="week-footer-btn" onClick={handleWeekBack}>
-                ‹ Wk {prevWeekNum}
-              </button>
-              <span className="week-footer-label">
-                {weekOffset === 0 ? `Week ${weekNum}` : weekRangeLabel}
-              </span>
-              <button
-                className="week-footer-btn"
-                onClick={handleWeekForward}
-                style={{ opacity: weekOffset >= 0 ? 0.2 : 1, pointerEvents: weekOffset >= 0 ? 'none' : 'auto' }}
-              >
-                Wk {nextWeekNum ?? weekNum + 1} ›
-              </button>
-            </div>
-
-          </div>
-        </div>
-
-        {/* ── 3. Week plan ── */}
-        <WeekPlanSection athleteId={athlete?.id} weekDays={weekDays} byDate={byDate} />
-
-        {/* ── 4. Goal progress ── */}
-        <div className="section">
-          <div className="section-label">Goal</div>
-          {!goal ? (
-            <div className="goal-card" style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14, padding: '20px 0' }}>
-              Complete onboarding to set a goal.
-            </div>
-          ) : goal.type === 'ftp' ? (
-            (() => {
-              const pct = (goal.startFtp && goal.ftpTarget && ftp)
-                ? Math.min(100, Math.max(0, Math.round(((ftp - goal.startFtp) / (goal.ftpTarget - goal.startFtp)) * 100)))
-                : 0
-              return (
-                <div className="goal-card">
-                  <div className="goal-header">
-                    <div>
-                      <div className="goal-title">FTP {goal.ftpTarget}W</div>
-                      {goal.targetDate && <div className="goal-date">By {formatGoalDate(goal.targetDate)}</div>}
-                    </div>
-                    <div className="goal-badge">{pct}% there</div>
-                  </div>
-                  <div className="progress-track">
-                    <div className="progress-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="progress-labels">
-                    {goal.startFtp
-                      ? <span>Started at <strong>{goal.startFtp}W</strong></span>
-                      : <span style={{ color: 'var(--text-tertiary)' }}>Start FTP not recorded</span>
-                    }
-                    <span>Target <strong>{goal.ftpTarget}W</strong></span>
-                  </div>
-                </div>
-              )
-            })()
-          ) : (
-            <div className="goal-card">
-              <div className="goal-header">
-                <div>
-                  <div className="goal-title">Ride {goal.distanceTarget}km</div>
-                  {goal.targetDate && <div className="goal-date">By {formatGoalDate(goal.targetDate)}</div>}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── 5. Day activity ── */}
-        <div className="section">
-          <div className="section-label">{dayLabel}</div>
-
-          {loading && (
-            <div className="state-message">Loading from Strava…</div>
-          )}
-
-          {!loading && error && (
-            <div className="state-message" style={{ color: 'var(--red)' }}>{error}</div>
-          )}
-
-          {!loading && !error && dayActivities.length === 0 && !plannedSession && (
-            <div className="rest-day-card">
-              <span className="rest-day-ring" />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: 14, fontWeight: 500 }}>Rest day</span>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.4 }}>
-                  Muscles repair and adapt during recovery. Rest is not optional — it is where the training takes effect.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {!loading && !error && dayActivities.length === 0 && plannedSession && (
-            <PlannedSessionCard session={plannedSession} />
-          )}
-
-          {!loading && dayActivities.length > 0 && (
-            <>
-              <div className="activity-list">
-                {dayActivities.map(a => {
-                  const meta = activityMeta(a)
-                  const tss = estimateTSS(a, ftp)
-                  const isVirtual = a.trainer || a.sport_type === 'VirtualRide'
-                  const isFtpSource = ftpResult?.sourceActivity?.id === a.id
-                  const savedRpe = rpeRatings[String(a.id)]
-                  const rpeZone = savedRpe ? getRpeZone(savedRpe) : null
-                  const isExpanded = expandedRpe === a.id
-                  const np = a.weighted_average_watts ? Math.round(a.weighted_average_watts) : null
-                  const npUnit = 'W NP'
-                  return (
-                    <div key={a.id}>
-                      <div
-                        className="activity-row"
-                        style={isFtpSource ? { background: '#F0F6FF' } : {}}
-                        onClick={() => setExpandedRpe(isExpanded ? null : a.id)}
-                      >
-                        <div className={`activity-icon ${meta.cls}`}>{meta.emoji}</div>
-                        <div className="activity-info">
-                          <div className="activity-name">
-                            {meta.label}
-                            {isVirtual && <span className="virtual-badge">Virtual</span>}
-                            {isFtpSource && <span className="virtual-badge" style={{ background: '#E3F2FD', color: 'var(--primary)' }}>FTP source</span>}
-                            {savedRpe && (
-                              <span className="rpe-badge" style={{ background: rpeZone?.color }}>
-                                RPE {savedRpe}
-                              </span>
-                            )}
-                          </div>
-                          <div className="activity-meta">
-                            {formatDuration(a.moving_time)}
-                            {np ? ` · ${np} ${npUnit}` : ''}
-                            {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm` : ''}
-                            {a.calories ? ` · ${Math.round(a.calories)} cal` : ''}
-                          </div>
-                        </div>
-                        <div className="activity-tss">
-                          {tss !== null
-                            ? <><div className="tss-value">{tss}</div><div className="tss-label">TSS</div></>
-                            : a.suffer_score
-                            ? <><div className="tss-value">{a.suffer_score}</div><div className="tss-label">SS</div></>
-                            : null}
-                        </div>
-                      </div>
-                      {isExpanded && <RpeRow activityId={a.id} onSave={handleRpeSave} />}
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Planned session shown alongside completed activities */}
-              {plannedSession && <PlannedSessionCard session={plannedSession} />}
-            </>
-          )}
-        </div>
-
+        {/* Week plan checklist */}
+        <WeekPlanSection
+          athleteId={athlete?.id}
+          weekDays={weekDays}
+          byDate={byDate}
+          weekOffset={weekOffset}
+          onWeekBack={handleWeekBack}
+          onWeekForward={handleWeekForward}
+          ftp={ftp}
+        />
 
       </div>
     </div>

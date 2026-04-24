@@ -110,6 +110,19 @@ All required vars are documented in `prototype/.env.example`. Never commit `prot
 
 ---
 
+## Product Thinking — Full Flow Responsibility
+
+**Always consider the whole product flow before touching any screen.**
+
+When making changes to a UI screen (dashboard, stats, profile), check whether those changes require corresponding updates in:
+- Onboarding: does the data this screen needs get collected during onboarding? If not, add the collection step.
+- Data layer (localStorage / Supabase): is the data being saved and loaded consistently across screens?
+- Other screens that share the same data: if you change what a field means or how it's stored, update every screen that reads it.
+
+Never ship a stats or dashboard improvement that relies on data that onboarding doesn't yet collect or save correctly. Think end-to-end before writing a single line.
+
+---
+
 ## Defining Tangible Goals
 
 When setting goals, every strong goal needs four numbers:

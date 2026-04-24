@@ -89,7 +89,7 @@ html, body {
 
 /* ── Section ── */
 .section {
-  margin-top: 28px;
+  margin-top: 20px;
 }
 
 .section-label {
@@ -1450,6 +1450,7 @@ button.source-badge {
   display: flex;
   align-items: center;
   gap: 0;
+  min-width: 0;
 }
 
 .ftp-dual-field .input-field {

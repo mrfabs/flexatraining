@@ -253,6 +253,18 @@ export default function Onboarding({ onComplete, session }) {
   const [doingActivities, setDoingActivities] = useState([])
   const [keepingActivities, setKeepingActivities] = useState([])
 
+  // Step 0 breakdown toggle
+  const [showBreakdown, setShowBreakdown] = useState(false)
+
+  // Power goal (Step 2 — power branch)
+  const [powerGoalMetric, setPowerGoalMetric] = useState(null)
+  const [powerGoalTargetInput, setPowerGoalTargetInput] = useState('')
+  const [powerGoalTarget, setPowerGoalTarget] = useState(null)
+
+  // Goal start date (Step 2 — all goal types)
+  const [goalStarted, setGoalStarted] = useState(null) // 'already' | 'now'
+  const [goalStartDate, setGoalStartDate] = useState('')
+
   // ── Load data on mount ──
   useEffect(() => {
     async function load() {
@@ -340,8 +352,15 @@ export default function Onboarding({ onComplete, session }) {
     onComplete({
       goalType,
       ftpTarget: goalType === 'ftp' ? ftpTarget : null,
-      distanceTarget: goalType === 'distance' ? distanceTarget : null,
+      distanceTarget: goalType === 'granfondo' ? distanceTarget : null,
+      powerGoalMetric: goalType === 'power' ? powerGoalMetric : null,
+      powerGoalTarget: goalType === 'power' ? powerGoalTarget : null,
       targetDate,
+      goalStartDate: goalStarted === 'already' && goalStartDate
+        ? goalStartDate
+        : goalStarted === 'now'
+        ? new Date().toISOString().split('T')[0]
+        : null,
       activityLevel: activityLevel || inferredLevel,
       daysPerWeek: daysPerWeek || inferredDays,
       trainingTime: trainingTime || inferredTime,
@@ -462,31 +481,42 @@ export default function Onboarding({ onComplete, session }) {
           </div>
         </div>
 
-        {/* Power breakdown */}
+        {/* Power breakdown (hidden behind toggle) */}
         {breakdown && (
           <div style={{ marginTop: 8 }}>
-            {['sprint', 'attack', 'climb'].map(cat => (
-              <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
-                <div className="breakdown-title" style={{ textTransform: 'capitalize' }}>{cat}</div>
-                {breakdown[cat].map(row => {
-                  const wkg = row.watts && weight ? Math.round((row.watts / weight) * 100) / 100 : null
-                  return (
-                    <div key={row.label} className="breakdown-row" style={{ cursor: 'default' }}>
-                      <span className="breakdown-label">{row.label}</span>
-                      <div className="breakdown-values">
-                        {row.watts
-                          ? <>
-                              <span className="breakdown-watts">{row.watts}<span style={{ fontSize: 11, color: 'var(--text-secondary)', marginLeft: 2 }}>W</span></span>
-                              {wkg && <span className="breakdown-wkg">{wkg} <span style={{ fontSize: 11 }}>W/kg</span></span>}
-                            </>
-                          : <span style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>—</span>
-                        }
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
+            {!showBreakdown ? (
+              <button
+                onClick={() => setShowBreakdown(true)}
+                style={{ width: '100%', background: 'var(--card)', border: 'none', borderRadius: 12, padding: '13px 16px', fontSize: 14, color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font)', textAlign: 'left' }}
+              >
+                See power breakdown ›
+              </button>
+            ) : (
+              <>
+                {['sprint', 'attack', 'climb'].map(cat => (
+                  <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
+                    <div className="breakdown-title" style={{ textTransform: 'capitalize' }}>{cat}</div>
+                    {breakdown[cat].map(row => {
+                      const wkg = row.watts && weight ? Math.round((row.watts / weight) * 100) / 100 : null
+                      return (
+                        <div key={row.label} className="breakdown-row" style={{ cursor: 'default' }}>
+                          <span className="breakdown-label">{row.label}</span>
+                          <div className="breakdown-values">
+                            {row.watts
+                              ? <>
+                                  <span className="breakdown-watts">{row.watts}<span style={{ fontSize: 11, color: 'var(--text-secondary)', marginLeft: 2 }}>W</span></span>
+                                  {wkg && <span className="breakdown-wkg">{wkg} <span style={{ fontSize: 11 }}>W/kg</span></span>}
+                                </>
+                              : <span style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>—</span>
+                            }
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
@@ -521,13 +551,38 @@ export default function Onboarding({ onComplete, session }) {
             <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Build raw power</div>
           </button>
           <button
-            className={`picker-option goal-type-card${goalType === 'distance' ? ' selected' : ''}`}
-            onClick={() => setGoalType('distance')}
+            className={`picker-option goal-type-card${goalType === 'power' ? ' selected' : ''}`}
+            onClick={() => setGoalType('power')}
           >
-            <div style={{ fontSize: 28, marginBottom: 8 }}>🏁</div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Ride a distance</div>
-            <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Hit a target ride</div>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🎯</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Target a power number</div>
+            <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Pick a specific effort to improve</div>
           </button>
+          <button
+            className={`picker-option goal-type-card${goalType === 'granfondo' ? ' selected' : ''}`}
+            onClick={() => setGoalType('granfondo')}
+          >
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🏔</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Gran Fondo</div>
+            <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>Train for a target event</div>
+          </button>
+          {[
+            { emoji: '🏊', label: 'Ironman', sub: 'Triathlon training' },
+            { emoji: '🌄', label: 'Ultra race', sub: 'Long-distance events' },
+            { emoji: '🏆', label: 'Race fitness', sub: 'Peak for competition' },
+            { emoji: '📈', label: 'Build volume', sub: 'Train more consistently' },
+          ].map(g => (
+            <div
+              key={g.label}
+              className="picker-option goal-type-card"
+              style={{ opacity: 0.4, position: 'relative' }}
+            >
+              <div style={{ fontSize: 28, marginBottom: 8 }}>{g.emoji}</div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{g.label}</div>
+              <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, lineHeight: 1.4 }}>{g.sub}</div>
+              <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 10, background: 'var(--border)', borderRadius: 6, padding: '2px 6px', color: 'var(--text-secondary)', fontWeight: 600 }}>Soon</div>
+            </div>
+          ))}
         </div>
 
         <div className="spacer" />
@@ -539,6 +594,43 @@ export default function Onboarding({ onComplete, session }) {
 
   // ── Step 2: Goal details ──
   if (step === 2) {
+    const startDateValid = goalStarted === 'now' || (goalStarted === 'already' && !!goalStartDate)
+
+    const startBlock = targetDate ? (
+      <div style={{ marginTop: 20 }}>
+        <div className="field-label">Have you already started training for this?</div>
+        <div className="picker-grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 0 }}>
+          <button
+            className={`picker-option${goalStarted === 'already' ? ' selected' : ''}`}
+            onClick={() => setGoalStarted('already')}
+            style={{ textAlign: 'left' }}
+          >
+            Yes, I've started
+          </button>
+          <button
+            className={`picker-option${goalStarted === 'now' ? ' selected' : ''}`}
+            onClick={() => { setGoalStarted('now'); setGoalStartDate('') }}
+            style={{ textAlign: 'left' }}
+          >
+            No, starting now
+          </button>
+        </div>
+        {goalStarted === 'already' && (
+          <>
+            <div className="field-label" style={{ marginTop: 12 }}>When did you start?</div>
+            <div className="input-row">
+              <input
+                className="input-field"
+                type="date"
+                value={goalStartDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={e => setGoalStartDate(e.target.value)}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    ) : null
 
     // FTP goal
     if (goalType === 'ftp') {
@@ -651,78 +743,145 @@ export default function Onboarding({ onComplete, session }) {
               <input className="input-field" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
             </div>
 
-            {(breakdown || targetBreakdown) && (
-              <>
-                <div className="field-label" style={{ marginTop: 8 }}>Power breakdown</div>
-                {targetBreakdown && <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>Tap a target number to adjust it — it updates your FTP.</p>}
-                {['sprint', 'attack', 'climb'].map(cat => (
-                  <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
-                    <div className="breakdown-row" style={{ cursor: 'default', paddingBottom: 4 }}>
-                      <span className="breakdown-title" style={{ padding: 0 }}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
-                      <div className="breakdown-values">
-                        {breakdown && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', minWidth: 56, textAlign: 'right' }}>Now</span>}
-                        {targetBreakdown && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary)', minWidth: 56, textAlign: 'right' }}>Target</span>}
-                      </div>
-                    </div>
-                    {(breakdown || targetBreakdown)[cat].map(row => {
-                      const currentRow = breakdown?.[cat].find(r => r.label === row.label)
-                      const targetRow = targetBreakdown?.[cat].find(r => r.label === row.label)
-                      const isEditing = editingBreakdownLabel === row.label
-                      return (
-                        <div key={row.label} className="breakdown-row" onClick={() => !isEditing && targetRow && setEditingBreakdownLabel(row.label)}>
-                          <span className="breakdown-label">{row.label}</span>
-                          {isEditing ? (
-                            <div className="breakdown-edit" onClick={e => e.stopPropagation()}>
-                              <input type="number" inputMode="numeric" value={breakdownEditValue}
-                                onChange={e => setBreakdownEditValue(e.target.value)} autoFocus
-                                style={{ width: 72, background: 'var(--bg)', border: 'none', borderRadius: 8, padding: '4px 8px', fontSize: 15, fontFamily: 'var(--font)', outline: 'none', textAlign: 'right' }} />
-                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 4 }}>W</span>
-                              <button onClick={() => handleBreakdownEdit(row.label, breakdownEditValue)}
-                                style={{ marginLeft: 8, fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 600 }}>Done</button>
-                            </div>
-                          ) : (
-                            <div className="breakdown-values">
-                              {breakdown && (
-                                <span style={{ fontSize: 14, color: 'var(--text-secondary)', minWidth: 56, textAlign: 'right' }}>
-                                  {currentRow?.watts ? `${currentRow.watts}W` : '—'}
-                                </span>
-                              )}
-                              {targetBreakdown && (
-                                <span style={{ fontSize: 14, fontWeight: 600, color: targetRow?.watts ? 'var(--primary)' : 'var(--text-tertiary)', minWidth: 56, textAlign: 'right' }}>
-                                  {targetRow?.watts ? `${targetRow.watts}W` : '—'}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))}
-              </>
-            )}
+            {startBlock}
 
             <div className="spacer" />
-            <button className="btn-primary" onClick={next} disabled={!ftpTarget || !targetDate}>Continue</button>
+            <button className="btn-primary" onClick={next} disabled={!ftpTarget || !targetDate || !startDateValid}>Continue</button>
             <button className="btn-secondary" onClick={back}>Back</button>
           </div>
         </div>
       )
     }
 
-    // Distance goal
+    // Power goal
+    if (goalType === 'power') {
+      const allRows = breakdown ? [
+        ...breakdown.sprint.map(r => ({ ...r, cat: 'Sprint' })),
+        ...breakdown.attack.map(r => ({ ...r, cat: 'Attack' })),
+        ...breakdown.climb.map(r => ({ ...r, cat: 'Climb' })),
+      ] : []
+      const selectedRow = allRows.find(r => r.label === powerGoalMetric)
+      const projectedFtp = powerGoalTarget && powerGoalMetric
+        ? ftpFromDurationPower(powerGoalMetric, powerGoalTarget)
+        : null
+
+      return (
+        <div className="onboarding">
+          <div className="onboarding-step">
+            <ProgressBar step={step} />
+            <h1 className="onboarding-heading">Which number do you want to improve?</h1>
+            <p className="onboarding-sub">Pick the effort that matters most to your riding.</p>
+
+            {!breakdown ? (
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No power data found. Connect Strava rides with a power meter to unlock this.</p>
+            ) : (
+              <>
+                {['sprint', 'attack', 'climb'].map(cat => (
+                  <div key={cat} className="breakdown-section" style={{ marginBottom: 10 }}>
+                    <div className="breakdown-title" style={{ textTransform: 'capitalize' }}>{cat}</div>
+                    {breakdown[cat].map(row => {
+                      const isSelected = powerGoalMetric === row.label
+                      return (
+                        <div
+                          key={row.label}
+                          className="breakdown-row"
+                          style={{
+                            cursor: row.watts ? 'pointer' : 'default',
+                            background: isSelected ? 'rgba(0,122,255,0.08)' : 'transparent',
+                            borderRadius: isSelected ? 8 : 0,
+                          }}
+                          onClick={() => row.watts && setPowerGoalMetric(row.label)}
+                        >
+                          <span className="breakdown-label" style={{ fontWeight: isSelected ? 700 : 400 }}>{row.label}</span>
+                          <div className="breakdown-values">
+                            {row.watts
+                              ? <span className="breakdown-watts" style={{ color: isSelected ? 'var(--primary)' : undefined }}>{row.watts}<span style={{ fontSize: 11, marginLeft: 2 }}>W</span></span>
+                              : <span style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>—</span>
+                            }
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+
+                {powerGoalMetric && selectedRow && (
+                  <div style={{ background: 'var(--card)', borderRadius: 12, padding: '14px 16px', marginTop: 8 }}>
+                    <div className="field-label" style={{ marginTop: 0 }}>Target for {powerGoalMetric}</div>
+                    <div className="ftp-dual-field" style={{ marginBottom: 12 }}>
+                      <input
+                        className="input-field"
+                        type="number"
+                        inputMode="numeric"
+                        value={powerGoalTargetInput}
+                        onChange={e => {
+                          setPowerGoalTargetInput(e.target.value)
+                          const v = parseInt(e.target.value)
+                          setPowerGoalTarget(v > 0 ? v : null)
+                        }}
+                        placeholder={selectedRow.watts ? String(Math.round(selectedRow.watts * 1.05)) : ''}
+                        style={{ borderRadius: '12px 0 0 12px' }}
+                      />
+                      <span className="ftp-dual-unit">W</span>
+                    </div>
+
+                    <div className="weight-impact-panel" style={{ margin: 0 }}>
+                      <div className="weight-impact-row">
+                        <span>Current {powerGoalMetric}</span>
+                        <span className="weight-impact-val">{selectedRow.watts}W</span>
+                      </div>
+                      {powerGoalTarget > 0 && (
+                        <div className="weight-impact-row">
+                          <span>Target {powerGoalMetric}</span>
+                          <span className="weight-impact-val" style={{ color: 'var(--primary)' }}>{powerGoalTarget}W</span>
+                        </div>
+                      )}
+                      {projectedFtp && (
+                        <div className="weight-impact-row" style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
+                          <span>Projected FTP</span>
+                          <span className="weight-impact-val">{ftp ? `${ftp}W → ${projectedFtp}W` : `~${projectedFtp}W`}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="field-label" style={{ marginTop: 16 }}>By when</div>
+            <div className="input-row">
+              <input className="input-field" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
+            </div>
+
+            {startBlock}
+
+            <div className="spacer" />
+            <button className="btn-primary" onClick={next} disabled={!powerGoalMetric || !powerGoalTarget || !targetDate || !startDateValid}>Continue</button>
+            <button className="btn-secondary" onClick={back}>Back</button>
+          </div>
+        </div>
+      )
+    }
+
+    // Gran Fondo goal
+    const GRANFONDO_DISTANCES = [
+      { label: '80 km', value: 80 },
+      { label: '120 km', value: 120 },
+      { label: '160 km', value: 160 },
+      { label: '200 km+', value: 200 },
+    ]
     return (
       <div className="onboarding">
         <div className="onboarding-step">
           <ProgressBar step={step} />
-          <h1 className="onboarding-heading">Pick your target distance.</h1>
+          <h1 className="onboarding-heading">How long is your Gran Fondo?</h1>
           {longestRide
-            ? <p className="onboarding-sub">Your longest ride was <strong>{longestRide.km}km</strong> on {longestRide.date}.</p>
-            : <p className="onboarding-sub">How far do you want to ride?</p>
+            ? <p className="onboarding-sub">Your longest ride so far was <strong>{longestRide.km}km</strong> on {longestRide.date}.</p>
+            : <p className="onboarding-sub">Pick the target distance for your event.</p>
           }
 
           <div className="picker-grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 24 }}>
-            {distanceGoals.map(d => (
+            {GRANFONDO_DISTANCES.map(d => (
               <button
                 key={d.value}
                 className={`picker-option${distanceTarget === d.value ? ' selected' : ''}`}
@@ -739,8 +898,10 @@ export default function Onboarding({ onComplete, session }) {
             <input className="input-field" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
           </div>
 
+          {startBlock}
+
           <div className="spacer" />
-          <button className="btn-primary" onClick={next} disabled={!distanceTarget || !targetDate}>Continue</button>
+          <button className="btn-primary" onClick={next} disabled={!distanceTarget || !targetDate || !startDateValid}>Continue</button>
           <button className="btn-secondary" onClick={back}>Back</button>
         </div>
       </div>
@@ -891,10 +1052,20 @@ export default function Onboarding({ onComplete, session }) {
       <div className="onboarding-step">
         <ProgressBar step={step} />
         <h1 className="onboarding-heading">What does your week look like?</h1>
-        {inferredDays
-          ? <p className="onboarding-sub">Your Strava data shows you train around <strong>{inferredDays} day{inferredDays > 1 ? 's' : ''} a week</strong>. But what does training actually compete with?</p>
-          : <p className="onboarding-sub">Two people with the same schedule can have completely different relationships to training.</p>
-        }
+        <p className="onboarding-sub">Two people with the same schedule can have completely different relationships to training.</p>
+
+        {inferredDays && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--card)', borderRadius: 14, padding: '14px 16px', marginBottom: 20 }}>
+            <div style={{ background: 'var(--primary)', color: '#fff', borderRadius: 10, width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, flexShrink: 0 }}>
+              {inferredDays}
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>days a week</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Based on your last 4 weeks of Strava data</div>
+            </div>
+          </div>
+        )}
+
         <Picker options={lifeContextOptions} value={lifeContext} onChange={setLifeContext} />
         <div className="spacer" />
         <button className="btn-primary" onClick={next} disabled={!lifeContext}>Continue</button>
@@ -1096,9 +1267,15 @@ export default function Onboarding({ onComplete, session }) {
   }
 
   // ── Step 12: Done ──
+  const powerCurrentWatts = powerGoalMetric && breakdown
+    ? [...breakdown.sprint, ...breakdown.attack, ...breakdown.climb].find(r => r.label === powerGoalMetric)?.watts ?? null
+    : null
+
   const goalSummary = goalType === 'ftp'
     ? `Target ${ftpTarget}W${ftp ? ` — up from your current ${ftp}W` : ''}.`
-    : `Ride ${distanceTarget}km${longestRide ? ` — your longest so far is ${longestRide.km}km` : ''}.`
+    : goalType === 'power'
+    ? `Target ${powerGoalTarget}W for ${powerGoalMetric}${powerCurrentWatts ? ` — currently at ${powerCurrentWatts}W` : ''}.`
+    : `Train for a ${distanceTarget}km Gran Fondo${longestRide ? ` — your longest ride is ${longestRide.km}km` : ''}.`
 
   const dateSummary = targetDate
     ? `By ${new Date(targetDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.`

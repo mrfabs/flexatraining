@@ -264,7 +264,10 @@ export default function App() {
       const athleteId = session.athlete.id
 
       // Persist full profile to localStorage for Profile screen
-      localStorage.setItem(`onboarding_profile_${athleteId}`, JSON.stringify(profile))
+      localStorage.setItem(`onboarding_profile_${athleteId}`, JSON.stringify({
+        ...profile,
+        onboardedAt: new Date().toISOString().split('T')[0],
+      }))
 
       // Generate and save a 1-week plan from onboarding data
       const weekPlan = generateWeekPlan({
